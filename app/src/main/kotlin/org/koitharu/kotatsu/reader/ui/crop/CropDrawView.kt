@@ -13,6 +13,7 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.max
 import kotlin.math.min
@@ -63,9 +64,16 @@ class CropDrawView @JvmOverloads constructor(
 	val strokes = ArrayList<Stroke>()
 	private val redoStack = ArrayList<Stroke>()
 
+	// the fit transform and the user's pinch-zoom/pan, composed into viewMatrix
+	private val baseMatrix = Matrix()
+	private val userMatrix = Matrix()
 	private val viewMatrix = Matrix()
 	private val inverseMatrix = Matrix()
 	private var bitmapRect = RectF()
+	private var fitScale = 1f
+	private var multiGesture = false
+	private var prevCx = 0f
+	private var prevCy = 0f
 
 	private val dimPaint = Paint().apply {
 		color = 0x99000000.toInt()
@@ -122,6 +130,16 @@ class CropDrawView @JvmOverloads constructor(
 		},
 	)
 
+	private val scaleDetector = ScaleGestureDetector(
+		context,
+		object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+			override fun onScale(detector: ScaleGestureDetector): Boolean {
+				applyScale(detector.scaleFactor, detector.focusX, detector.focusY)
+				return true
+			}
+		},
+	)
+
 	private enum class Handle {
 		TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, MOVE,
 	}
@@ -142,6 +160,7 @@ class CropDrawView @JvmOverloads constructor(
 		strokes.clear()
 		redoStack.clear()
 		activeStroke = null
+		userMatrix.reset()
 		notifyHistoryChanged()
 		invalidate()
 	}
@@ -231,14 +250,15 @@ class CropDrawView @JvmOverloads constructor(
 			return
 		}
 		val scale = min(width / bmp.width.toFloat(), height / bmp.height.toFloat())
-		viewMatrix.reset()
-		viewMatrix.postScale(scale, scale)
+		baseMatrix.reset()
+		baseMatrix.postScale(scale, scale)
 		val dx = (width - bmp.width * scale) / 2f
 		val dy = (height - bmp.height * scale) / 2f
-		viewMatrix.postTranslate(dx, dy)
-		viewMatrix.invert(inverseMatrix)
-		bitmapRect = RectF(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
-		viewMatrix.mapRect(bitmapRect)
+		baseMatrix.postTranslate(dx, dy)
+		fitScale = scale
+		recomputeMatrices()
+		clampPan()
+		recomputeMatrices()
 	}
 
 	override fun onDraw(canvas: Canvas) {
@@ -308,9 +328,158 @@ class CropDrawView @JvmOverloads constructor(
 		return Point(out[0], out[1])
 	}
 
+	/** Rebuilds the composed view matrix (fit transform followed by the user's zoom and pan). */
+	private fun recomputeMatrices() {
+		viewMatrix.set(baseMatrix)
+		viewMatrix.preConcat(userMatrix)
+		viewMatrix.invert(inverseMatrix)
+		val bmp = bitmap
+		if (bmp != null) {
+			bitmapRect.set(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
+			viewMatrix.mapRect(bitmapRect)
+		}
+	}
+
+	/** Keeps the page on screen: centers it when smaller than the view, pins the edges otherwise. */
+	private fun clampPan() {
+		val bmp = bitmap ?: return
+		if (width == 0 || height == 0) {
+			return
+		}
+		val rect = RectF(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
+		viewMatrix.mapRect(rect)
+		var dx = 0f
+		var dy = 0f
+		if (rect.width() <= width) {
+			dx = (width - rect.width()) / 2f - rect.left
+		} else {
+			if (rect.left > 0f) dx = -rect.left
+			else if (rect.right < width) dx = width - rect.right
+		}
+		if (rect.height() <= height) {
+			dy = (height - rect.height()) / 2f - rect.top
+		} else {
+			if (rect.top > 0f) dy = -rect.top
+			else if (rect.bottom < height) dy = height - rect.bottom
+		}
+		if (dx != 0f || dy != 0f) {
+			userMatrix.postTranslate(dx, dy)
+		}
+	}
+
+	/** Applies one pinch step, clamped between the fit size and 8x, and snaps back at the minimum. */
+	private fun applyScale(factor: Float, fx: Float, fy: Float) {
+		cancelTransient()
+		val current = viewMatrix.mapRadius(1f)
+		if (current <= 0f) {
+			return
+		}
+		val target = (current * factor).coerceIn(fitScale, fitScale * MAX_ZOOM)
+		val eff = target / current
+		if (eff in 0.999f..1.001f) {
+			return
+		}
+		if (target <= fitScale + 0.01f) {
+			userMatrix.reset()
+		} else {
+			userMatrix.postScale(eff, eff, fx, fy)
+		}
+		recomputeMatrices()
+		clampPan()
+		recomputeMatrices()
+		invalidate()
+	}
+
+	/** Two-finger pan by the centroid movement of all active pointers. */
+	private fun panBy(event: MotionEvent) {
+		val cx = centroidX(event)
+		val cy = centroidY(event)
+		val dx = cx - prevCx
+		val dy = cy - prevCy
+		prevCx = cx
+		prevCy = cy
+		if (dx != 0f || dy != 0f) {
+			userMatrix.postTranslate(dx, dy)
+			recomputeMatrices()
+			clampPan()
+			recomputeMatrices()
+			invalidate()
+		}
+	}
+
+	private fun centroidX(event: MotionEvent): Float {
+		var sum = 0f
+		for (i in 0 until event.pointerCount) {
+			sum += event.getX(i)
+		}
+		return sum / event.pointerCount
+	}
+
+	private fun centroidY(event: MotionEvent): Float {
+		var sum = 0f
+		for (i in 0 until event.pointerCount) {
+			sum += event.getX(i)
+		}
+		return sum / event.pointerCount
+	}
+
+	/** Drops the in-progress drag or stroke, so a pinch never leaves half-finished work. */
+	private fun cancelTransient() {
+		activeStroke = null
+		dragHandle = null
+	}
+
 	override fun onTouchEvent(event: MotionEvent): Boolean {
 		val bmp = bitmap ?: return false
-		doubleTapDetector.onTouchEvent(event)
+		scaleDetector.onTouchEvent(event)
+		val count = event.pointerCount
+		when (event.actionMasked) {
+			MotionEvent.ACTION_DOWN -> {
+				multiGesture = false
+				prevCx = event.x
+				prevCy = event.y
+			}
+
+			MotionEvent.ACTION_POINTER_DOWN -> {
+				if (count >= 2) {
+					if (!multiGesture) {
+						multiGesture = true
+						cancelTransient()
+					}
+					prevCx = centroidX(event)
+					prevCy = centroidY(event)
+					return true
+				}
+			}
+
+			MotionEvent.ACTION_MOVE -> {
+				if (multiGesture || count >= 2) {
+					if (count >= 2) {
+						panBy(event)
+					} else {
+						prevCx = event.x
+						prevCy = event.y
+					}
+					return true
+				}
+			}
+
+			MotionEvent.ACTION_POINTER_UP -> {
+				prevCx = centroidX(event)
+				prevCy = centroidY(event)
+				return true
+			}
+
+			MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+				multiGesture = false
+			}
+		}
+		if (multiGesture || scaleDetector.isInProgress) {
+			return true
+		}
+		if (count == 1) {
+			doubleTapDetector.onTouchEvent(event)
+		}
 		when (mode) {
 			Mode.CROP -> {
 				when (event.actionMasked) {
@@ -455,5 +624,6 @@ class CropDrawView @JvmOverloads constructor(
 
 	private companion object {
 		const val MIN_CROP = 64f
+		const val MAX_ZOOM = 8f
 	}
 }
