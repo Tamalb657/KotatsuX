@@ -34,7 +34,7 @@ class CropDrawView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
 	enum class Mode {
-		CROP, DRAW, ERASE, PICK_COLOR,
+		CROP, DRAW, ERASE, LASSO, PICK_COLOR,
 	}
 
 	class Stroke(
@@ -62,6 +62,18 @@ class CropDrawView @JvmOverloads constructor(
 	var strokeWidth = 12f
 
 	var onColorPicked: ((Int) -> Unit)? = null
+
+	/** Notifies that the lasso region appeared, changed or was cleared. */
+	var onCropShapeChanged: (() -> Unit)? = null
+
+	/** The closed free-form region; when set it replaces the rectangular crop for the export. */
+	var lassoRegion: Path? = null
+		private set
+
+	val lassoPoints = ArrayList<Point>()
+
+	val hasLasso: Boolean
+		get() = lassoRegion != null
 
 	/** Notifies that undo/redo availability changed, so buttons can enable or disable. */
 	var onHistoryChanged: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
@@ -201,6 +213,11 @@ class CropDrawView @JvmOverloads constructor(
 		overlay = null
 		overlayCanvas = null
 		loupePoint = null
+		if (width > 0 && height > 0) {
+			// the view is already laid out: compute the fit matrix now
+			// (onSizeChanged fired before the bitmap existed)
+			updateMatrix()
+		}
 		notifyHistoryChanged()
 		invalidate()
 	}
@@ -306,20 +323,42 @@ class CropDrawView @JvmOverloads constructor(
 	fun resetCrop() {
 		val bmp = bitmap ?: return
 		cropRect.set(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
+		if (lassoRegion != null) {
+			lassoRegion = null
+			onCropShapeChanged?.invoke()
+		}
 		invalidate()
 	}
 
 	/** Renders the marked and cropped region into a new bitmap at full source resolution. */
 	fun renderOutput(): Bitmap {
 		val bmp = checkNotNull(bitmap) { "No bitmap to render" }
-		val rect = RectF(cropRect)
 		rebuildOverlay()
-		val output = Bitmap.createBitmap(rect.width().toInt().coerceAtLeast(1), rect.height().toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
-		val canvas = Canvas(output)
-		canvas.translate(-rect.left, -rect.top)
+		val full = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+		val canvas = Canvas(full)
 		canvas.drawBitmap(bmp, 0f, 0f, null)
 		overlay?.let { canvas.drawBitmap(it, 0f, 0f, null) }
-		return output
+		val lasso = lassoRegion
+		if (lasso == null) {
+			val rect = RectF(cropRect)
+			val left = rect.left.toInt().coerceIn(0, full.width - 1)
+			val top = rect.top.toInt().coerceIn(0, full.height - 1)
+			val width = (rect.right.toInt() - left).coerceAtLeast(1).coerceAtMost(full.width - left)
+			val height = (rect.bottom.toInt() - top).coerceAtLeast(1).coerceAtMost(full.height - top)
+			return Bitmap.createBitmap(full, left, top, width, height)
+		}
+		// free-form crop: clear everything outside the region by drawing the
+		// inverse region with CLEAR (drawPaint+clipOutPath is unreliable here)
+		val inverse = Path(lasso)
+		inverse.fillType = Path.FillType.INVERSE_WINDING
+		canvas.drawPath(inverse, Paint().apply { xfermode = xferClear })
+		val bounds = RectF()
+		lasso.computeBounds(bounds, true)
+		val left = bounds.left.toInt().coerceIn(0, full.width - 1)
+		val top = bounds.top.toInt().coerceIn(0, full.height - 1)
+		val right = bounds.right.toInt().coerceIn(left + 1, full.width)
+		val bottom = bounds.bottom.toInt().coerceIn(top + 1, full.height)
+		return Bitmap.createBitmap(full, left, top, right - left, bottom - top)
 	}
 
 	/** Makes sure the drawing-layer bitmap exists and matches the page size. */
@@ -367,17 +406,43 @@ class CropDrawView @JvmOverloads constructor(
 		canvas.restoreToCount(save)
 		val cropInView = RectF(cropRect)
 		viewMatrix.mapRect(cropInView)
-		canvas.drawRect(bitmapRect, dimPaint)
-		canvas.save()
-		canvas.clipRect(cropInView)
-		canvas.drawBitmap(bmp, viewMatrix, null)
-		canvas.restore()
-		canvas.drawRect(cropInView, rectOuterPaint)
-		canvas.drawRect(cropInView, rectPaint)
-		drawHandle(canvas, cropInView.left, cropInView.top)
-		drawHandle(canvas, cropInView.right, cropInView.top)
-		drawHandle(canvas, cropInView.left, cropInView.bottom)
-		drawHandle(canvas, cropInView.right, cropInView.bottom)
+		val lasso = lassoRegion
+		if (lasso == null) {
+			// rectangular crop: dim outside, redraw inside, outline + handles
+			canvas.drawRect(bitmapRect, dimPaint)
+			canvas.save()
+			canvas.clipRect(cropInView)
+			canvas.drawBitmap(bmp, viewMatrix, null)
+			canvas.restore()
+			canvas.drawRect(cropInView, rectOuterPaint)
+			canvas.drawRect(cropInView, rectPaint)
+			drawHandle(canvas, cropInView.left, cropInView.top)
+			drawHandle(canvas, cropInView.right, cropInView.top)
+			drawHandle(canvas, cropInView.left, cropInView.bottom)
+			drawHandle(canvas, cropInView.right, cropInView.bottom)
+		} else {
+			// lasso crop: dim outside the free-form region, outline it
+			val viewPath = Path(lasso)
+			viewPath.transform(viewMatrix)
+			canvas.save()
+			canvas.clipOutPath(viewPath)
+			canvas.drawRect(bitmapRect, dimPaint)
+			canvas.restore()
+			canvas.drawPath(viewPath, rectOuterPaint)
+			canvas.drawPath(viewPath, rectPaint)
+		}
+		// the free-form region being drawn right now
+		if (mode == Mode.LASSO && lassoPoints.isNotEmpty()) {
+			val path = Path()
+			val first = toView(lassoPoints[0])
+			path.moveTo(first.x, first.y)
+			for (i in 1 until lassoPoints.size) {
+				val p = toView(lassoPoints[i])
+				path.lineTo(p.x, p.y)
+			}
+			canvas.drawPath(path, rectOuterPaint)
+			canvas.drawPath(path, rectPaint)
+		}
 		// the drawing layer with all marks (strokes + eraser holes)
 		overlay?.let { canvas.drawBitmap(it, viewMatrix, null) }
 		if (mode == Mode.PICK_COLOR) {
@@ -548,6 +613,7 @@ class CropDrawView @JvmOverloads constructor(
 			rebuildOverlay()
 		}
 		dragHandle = null
+		lassoPoints.clear()
 	}
 
 	override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -711,6 +777,51 @@ class CropDrawView @JvmOverloads constructor(
 						}
 						activeStroke = null
 						notifyHistoryChanged()
+						invalidate()
+						return true
+					}
+				}
+			}
+
+			Mode.LASSO -> {
+				when (event.actionMasked) {
+					MotionEvent.ACTION_DOWN -> {
+						lassoPoints.clear()
+						lassoPoints.add(toImage(event.x, event.y))
+						invalidate()
+						return true
+					}
+
+					MotionEvent.ACTION_MOVE -> {
+						if (lassoPoints.isNotEmpty()) {
+							val image = toImage(event.x, event.y)
+							val last = lassoPoints.last()
+							if ((image.x - last.x) * (image.x - last.x) + (image.y - last.y) * (image.y - last.y) > 16f) {
+								lassoPoints.add(image)
+								invalidate()
+							}
+						}
+						return true
+					}
+
+					MotionEvent.ACTION_UP -> {
+						if (lassoPoints.size >= 3) {
+							val path = Path()
+							path.moveTo(lassoPoints[0].x, lassoPoints[0].y)
+							for (i in 1 until lassoPoints.size) {
+								path.lineTo(lassoPoints[i].x, lassoPoints[i].y)
+							}
+							path.close()
+							lassoRegion = path
+							onCropShapeChanged?.invoke()
+						}
+						lassoPoints.clear()
+						invalidate()
+						return true
+					}
+
+					MotionEvent.ACTION_CANCEL -> {
+						lassoPoints.clear()
 						invalidate()
 						return true
 					}

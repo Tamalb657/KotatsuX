@@ -82,7 +82,11 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		findViewById<View>(R.id.button_eyedropper).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_draw).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_erase).setOnClickListener(this)
+		findViewById<View>(R.id.button_mode_lasso).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_crop).setOnClickListener(this)
+		cropView.onCropShapeChanged = {
+			updateFormatButton()
+		}
 		findViewById<View>(R.id.button_undo).setOnClickListener(this)
 		findViewById<View>(R.id.button_redo).setOnClickListener(this)
 		findViewById<View>(R.id.button_reset).setOnClickListener(this)
@@ -130,6 +134,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 			R.id.button_mode_crop -> setMode(CropDrawView.Mode.CROP)
 			R.id.button_mode_draw -> setMode(CropDrawView.Mode.DRAW)
 			R.id.button_mode_erase -> setMode(CropDrawView.Mode.ERASE)
+			R.id.button_mode_lasso -> setMode(CropDrawView.Mode.LASSO)
 			R.id.button_eyedropper -> setMode(CropDrawView.Mode.PICK_COLOR)
 			R.id.button_undo -> cropView.undo()
 			R.id.button_redo -> cropView.redo()
@@ -154,6 +159,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		findViewById<View>(R.id.button_mode_crop).isSelected = mode == CropDrawView.Mode.CROP
 		findViewById<View>(R.id.button_mode_draw).isSelected = mode == CropDrawView.Mode.DRAW
 		findViewById<View>(R.id.button_mode_erase).isSelected = mode == CropDrawView.Mode.ERASE
+		findViewById<View>(R.id.button_mode_lasso).isSelected = mode == CropDrawView.Mode.LASSO
 		findViewById<View>(R.id.button_eyedropper).isSelected = mode == CropDrawView.Mode.PICK_COLOR
 	}
 
@@ -172,7 +178,15 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 	}
 
 	private fun updateFormatButton() {
-		findViewById<MaterialButton>(R.id.button_format).text = if (isPng) "PNG" else "JPG"
+		val button = findViewById<MaterialButton>(R.id.button_format)
+		if (cropView.hasLasso) {
+			// a free-form crop exports with transparency, which requires PNG
+			button.text = "PNG"
+			button.isEnabled = false
+			return
+		}
+		button.isEnabled = true
+		button.text = if (isPng) "PNG" else "JPG"
 		settings.isEditorExportPng = isPng
 	}
 
@@ -192,9 +206,10 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 
 	private fun save() {
 		val output = cropView.renderOutput()
+		val png = isPng || cropView.hasLasso
 		lifecycleScope.launch {
 			val saved = withContext(Dispatchers.IO) {
-				runCatching { saveBitmap(output) }
+				runCatching { saveBitmap(output, png) }
 					.onFailure { it.printStackTraceDebug() }
 					.getOrNull()
 			}
@@ -207,15 +222,15 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 				findViewById(R.id.cropView),
 				getString(R.string.file_saved_to, saved.displayPath()),
 				Snackbar.LENGTH_LONG,
-			).setAction(R.string.share) { share(saved) }
+			).setAction(R.string.share) { share(saved, png) }
 			snackbar.show()
 			finish()
 		}
 	}
 
-	private fun share(uri: Uri) {
+	private fun share(uri: Uri, png: Boolean) {
 		val intent = Intent(Intent.ACTION_SEND).apply {
-			type = if (isPng) "image/png" else "image/jpeg"
+			type = if (png) "image/png" else "image/jpeg"
 			putExtra(Intent.EXTRA_STREAM, uri)
 			addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 		}
@@ -240,12 +255,12 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		else -> toString()
 	}
 
-	private fun saveBitmap(bitmap: Bitmap): Uri {
+	private fun saveBitmap(bitmap: Bitmap, png: Boolean): Uri {
 		val date = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 		val name = "KotatsuX_crop_$date"
-		val format = if (isPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-		val mime = if (isPng) "image/png" else "image/jpeg"
-		val ext = if (isPng) "png" else "jpg"
+		val format = if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+		val mime = if (png) "image/png" else "image/jpeg"
+		val ext = if (png) "png" else "jpg"
 		// the folder the user picked in Settings -> Downloads & storage (if any)
 		val dir = settings.getEditorSaveDir(this)
 		if (dir != null) {
