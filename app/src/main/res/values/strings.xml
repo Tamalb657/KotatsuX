@@ -62,6 +62,14 @@
     <string name="draw">Draw</string>
     <string name="pick_color">Pick colour</string>
     <string name="reset_crop">Reset crop</string>
+    <string name="redo">Redo</string>
+    <string name="image_editor">Image editor</string>
+    <string name="editor_save_dir">Where edited images are saved</string>
+    <string name="editor_save_dir_summary">Default: Pictures/KotatsuX. Tap to choose a folder.</string>
+    <string name="editor_export_png">Save as PNG (lossless)</string>
+    <string name="editor_export_png_summary">Turn off for smaller JPEG files</string>
+    <string name="stroke_width">Stroke width</string>
+    <string name="file_saved_to">Saved to %s</string>
     <string name="stroke_thin">S</string>
     <string name="stroke_medium">M</string>
     <string name="stroke_thick">L</string>

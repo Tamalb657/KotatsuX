@@ -56,6 +56,24 @@
 
 	</PreferenceCategory>
 
+	<PreferenceCategory android:title="@string/image_editor">
+
+		<Preference
+			android:icon="@drawable/ic_folder_file"
+			android:key="editor_save_dir"
+			android:persistent="false"
+			android:summary="@string/editor_save_dir_summary"
+			android:title="@string/editor_save_dir" />
+
+		<SwitchPreferenceCompat
+			android:defaultValue="true"
+			android:icon="@drawable/ic_file_zip"
+			android:key="editor_export_png"
+			android:summary="@string/editor_export_png_summary"
+			android:title="@string/editor_export_png" />
+
+	</PreferenceCategory>
+
 	<PreferenceCategory android:title="@string/storage_usage">
 
 		<org.koitharu.kotatsu.settings.userdata.storage.StorageUsagePreference

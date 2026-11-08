@@ -1,5 +1,6 @@
 package org.koitharu.kotatsu.reader.ui.crop
 
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -12,16 +13,19 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.color.MaterialColors
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.slider.Slider
+import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koitharu.kotatsu.R
+import org.koitharu.kotatsu.core.prefs.AppSettings
 import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
 import java.io.File
 import java.text.SimpleDateFormat
@@ -36,7 +40,8 @@ import java.util.Locale
 class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 
 	private lateinit var cropView: CropDrawView
-	private val colorViews = ArrayList<View>()
+	private lateinit var settings: AppSettings
+	private var isPng = true
 
 	private var paletteColors = IntArray(0)
 	private var selectedColorView: View? = null
@@ -61,6 +66,10 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		cropView.onColorPicked = { color ->
 			selectColorSwatch(-1, color)
 		}
+		cropView.onHistoryChanged = { canUndo, canRedo ->
+			findViewById<View>(R.id.button_undo).isEnabled = canUndo
+			findViewById<View>(R.id.button_redo).isEnabled = canRedo
+		}
 
 		paletteColors = IntArray(PALETTE.size)
 		for (i in PALETTE.indices) {
@@ -74,16 +83,31 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		findViewById<View>(R.id.button_mode_draw).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_crop).setOnClickListener(this)
 		findViewById<View>(R.id.button_undo).setOnClickListener(this)
+		findViewById<View>(R.id.button_redo).setOnClickListener(this)
 		findViewById<View>(R.id.button_reset).setOnClickListener(this)
-		findViewById<View>(R.id.button_stroke_small).setOnClickListener(this)
-		findViewById<View>(R.id.button_stroke_medium).setOnClickListener(this)
-		findViewById<View>(R.id.button_stroke_large).setOnClickListener(this)
+		findViewById<View>(R.id.button_format).setOnClickListener(this)
 		findViewById<View>(R.id.button_save).setOnClickListener(this)
 
-		selectColorSwatch(0, PALETTE[0])
+		// restore the tools from the previous session
+		settings = AppSettings(this)
+		val savedColor = settings.editorStrokeColor
+		val savedColorIndex = PALETTE.indexOf(savedColor)
+		selectColorSwatch(savedColorIndex, savedColor)
+		setStrokeWidth(settings.editorStrokeWidth)
+		isPng = settings.isEditorExportPng
+		updateFormatButton()
+
 		setMode(CropDrawView.Mode.CROP)
 
-	 lifecycleScope.launch {
+		val slider = findViewById<Slider>(R.id.slider_stroke)
+		slider.value = settings.editorStrokeWidth.coerceIn(1f, 100f)
+		slider.addOnChangeListener { _, value, fromUser ->
+			if (fromUser) {
+				setStrokeWidth(value)
+			}
+		}
+
+		lifecycleScope.launch {
 			val bitmap = withContext(Dispatchers.IO) {
 				runCatching { decodeFile(File(path)) }
 					.onFailure { it.printStackTraceDebug() }
@@ -106,10 +130,12 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 			R.id.button_mode_draw -> setMode(CropDrawView.Mode.DRAW)
 			R.id.button_eyedropper -> setMode(CropDrawView.Mode.PICK_COLOR)
 			R.id.button_undo -> cropView.undo()
+			R.id.button_redo -> cropView.redo()
 			R.id.button_reset -> cropView.resetCrop()
-			R.id.button_stroke_small -> setStrokeWidth(8f)
-			R.id.button_stroke_medium -> setStrokeWidth(20f)
-			R.id.button_stroke_large -> setStrokeWidth(48f)
+			R.id.button_format -> {
+				isPng = !isPng
+				updateFormatButton()
+			}
 			R.id.button_save -> save()
 			else -> {
 				val index = v.tag as? Int
@@ -130,15 +156,21 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 
 	private fun setStrokeWidth(width: Float) {
 		cropView.strokeWidth = width
-		cropView.mode = CropDrawView.Mode.DRAW
-		findViewById<View>(R.id.button_mode_draw).isSelected = true
+		findViewById<TextView>(R.id.textView_stroke_width).text = width.toInt().toString()
+		settings.editorStrokeWidth = width
 	}
 
 	private fun selectColorSwatch(index: Int, color: Int) {
 		cropView.strokeColor = color
+		settings.editorStrokeColor = color
 		selectedColorView?.isSelected = false
 		selectedColorView = if (index >= 0) findViewById(SWATCH_IDS[index]) else null
 		selectedColorView?.isSelected = true
+	}
+
+	private fun updateFormatButton() {
+		findViewById<MaterialButton>(R.id.button_format).text = if (isPng) "PNG" else "JPG"
+		settings.isEditorExportPng = isPng
 	}
 
 	private fun decodeFile(file: File): Bitmap {
@@ -158,27 +190,76 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 	private fun save() {
 		val output = cropView.renderOutput()
 		lifecycleScope.launch {
-			val uri = withContext(Dispatchers.IO) {
+			val saved = withContext(Dispatchers.IO) {
 				runCatching { saveBitmap(output) }
 					.onFailure { it.printStackTraceDebug() }
 					.getOrNull()
 			}
-			if (uri != null) {
-				Toast.makeText(this@PageCropActivity, getString(R.string.cropped_image_saved, uri.toString()), Toast.LENGTH_LONG).show()
-				finish()
-			} else {
+			if (saved == null) {
 				Toast.makeText(this@PageCropActivity, R.string.error, Toast.LENGTH_SHORT).show()
+				return@launch
 			}
+			output.recycle()
+			val snackbar = Snackbar.make(
+				findViewById(R.id.cropView),
+				getString(R.string.file_saved_to, saved.displayPath()),
+				Snackbar.LENGTH_LONG,
+			).setAction(R.string.share) { share(saved) }
+			snackbar.show()
+			finish()
 		}
+	}
+
+	private fun share(uri: Uri) {
+		val intent = Intent(Intent.ACTION_SEND).apply {
+			type = if (isPng) "image/png" else "image/jpeg"
+			putExtra(Intent.EXTRA_STREAM, uri)
+			addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+		}
+		startActivity(Intent.createChooser(intent, getString(R.string.share), null))
+	}
+
+	private fun Uri.displayPath(): String = when {
+		scheme == ContentResolver.SCHEME_FILE -> path.orEmpty()
+		Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
+			val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.DISPLAY_NAME)
+			contentResolver.query(this, projection, null, null, null)?.use { cursor ->
+				if (cursor.moveToFirst()) {
+					val rel = cursor.getString(0)
+					val name = cursor.getString(1)
+					if (rel != null && name != null) rel + File.separator + name else toString()
+				} else {
+					toString()
+				}
+			} ?: toString()
+		}
+
+		else -> toString()
 	}
 
 	private fun saveBitmap(bitmap: Bitmap): Uri {
 		val date = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 		val name = "KotatsuX_crop_$date"
+		val format = if (isPng) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+		val mime = if (isPng) "image/png" else "image/jpeg"
+		val ext = if (isPng) "png" else "jpg"
+		// the folder the user picked in Settings -> Downloads & storage (if any)
+		val dir = settings.getEditorSaveDir(this)
+		if (dir != null) {
+			val doc = dir.createFile(mime, name)
+				?: throw IllegalStateException("Cannot create the destination file")
+			contentResolver.openOutputStream(doc.uri)?.use { out ->
+				if (!bitmap.compress(format, 95, out)) {
+					throw IllegalStateException("Cannot compress the cropped image")
+				}
+			}
+			return doc.uri
+		}
+		// default: the system Pictures collection, shown in gallery apps
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
 			val values = ContentValues().apply {
-				put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.jpg")
-				put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+				put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.$ext")
+				put(MediaStore.MediaColumns.MIME_TYPE, mime)
 				put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/KotatsuX")
 				put(MediaStore.MediaColumns.IS_PENDING, 1)
 			}
@@ -186,7 +267,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 			val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
 				?: throw IllegalStateException("MediaStore rejected the insert")
 			resolver.openOutputStream(uri)?.use { out ->
-				if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)) {
+				if (!bitmap.compress(format, 95, out)) {
 					throw IllegalStateException("Cannot compress the cropped image")
 				}
 			}
@@ -195,13 +276,13 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 			resolver.update(uri, values, null, null)
 			return uri
 		}
-		val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "KotatsuX")
-		if (!dir.isDirectory && !dir.mkdirs()) {
+		val legacyDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "KotatsuX")
+		if (!legacyDir.isDirectory && !legacyDir.mkdirs()) {
 			throw IllegalStateException("Cannot create the pictures directory")
 		}
-		val file = File(dir, "$name.jpg")
+		val file = File(legacyDir, "$name.$ext")
 		file.outputStream().use { out ->
-			if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)) {
+			if (!bitmap.compress(format, 95, out)) {
 				throw IllegalStateException("Cannot compress the cropped image")
 			}
 		}

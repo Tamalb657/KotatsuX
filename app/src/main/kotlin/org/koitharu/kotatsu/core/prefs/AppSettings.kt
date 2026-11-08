@@ -3,6 +3,7 @@ package org.koitharu.kotatsu.core.prefs
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
+import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
@@ -694,6 +695,27 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		prefs.edit { putString(KEY_PAGES_SAVE_DIR, uri?.toString()) }
 	}
 
+	fun getEditorSaveDir(context: Context): DocumentFile? =
+		prefs.getString(KEY_EDITOR_SAVE_DIR, null)?.toUriOrNull()?.let {
+			DocumentFile.fromTreeUri(context, it)?.takeIf { it.canWrite() }
+		}
+
+	fun setEditorSaveDir(uri: Uri?) {
+		prefs.edit { putString(KEY_EDITOR_SAVE_DIR, uri?.toString()) }
+	}
+
+	var editorStrokeColor: Int
+		get() = prefs.getInt(KEY_EDITOR_COLOR, Color.BLACK)
+		set(value) = prefs.edit { putInt(KEY_EDITOR_COLOR, value) }
+
+	var editorStrokeWidth: Float
+		get() = prefs.getFloat(KEY_EDITOR_STROKE_WIDTH, 20f)
+		set(value) = prefs.edit { putFloat(KEY_EDITOR_STROKE_WIDTH, value) }
+
+	var isEditorExportPng: Boolean
+		get() = prefs.getBoolean(KEY_EDITOR_EXPORT_PNG, true)
+		set(value) = prefs.edit { putBoolean(KEY_EDITOR_EXPORT_PNG, value) }
+
 	fun getMangaListBadges(): Int {
 		val raw = prefs.getStringSet(KEY_MANGA_LIST_BADGES, mangaListBadgesDefault).orEmpty()
 		var result = 0
@@ -961,6 +983,10 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		const val KEY_DETAILS_LAST_TAB = "details_last_tab"
 		const val KEY_READING_TIME = "reading_time"
 		const val KEY_PAGES_SAVE_DIR = "pages_dir"
+		const val KEY_EDITOR_SAVE_DIR = "editor_save_dir"
+		const val KEY_EDITOR_COLOR = "editor_color"
+		const val KEY_EDITOR_STROKE_WIDTH = "editor_stroke_width"
+		const val KEY_EDITOR_EXPORT_PNG = "editor_export_png"
 		const val KEY_PAGES_SAVE_ASK = "pages_dir_ask"
 		const val KEY_STATS_ENABLED = "stats_on"
 		const val KEY_FEED_HEADER = "feed_header"

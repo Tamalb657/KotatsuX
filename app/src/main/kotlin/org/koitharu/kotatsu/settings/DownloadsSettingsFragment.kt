@@ -47,6 +47,8 @@ class DownloadsSettingsFragment :
 		if (it != null) onDirectoryPicked(it)
 	}
 
+	private var pendingDirTarget: String? = null
+
 	override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
 		addPreferencesFromResource(R.xml.pref_downloads)
 		findPreference<ListPreference>(AppSettings.KEY_DOWNLOADS_FORMAT)?.run {
@@ -60,6 +62,7 @@ class DownloadsSettingsFragment :
 		findPreference<Preference>(AppSettings.KEY_LOCAL_STORAGE)?.bindStorageName()
 		findPreference<Preference>(AppSettings.KEY_LOCAL_MANGA_DIRS)?.bindDirectoriesCount()
 		findPreference<Preference>(AppSettings.KEY_PAGES_SAVE_DIR)?.bindPagesDirectory()
+		findPreference<Preference>(AppSettings.KEY_EDITOR_SAVE_DIR)?.bindEditorDirectory()
 		viewModel.onError.observeEvent(viewLifecycleOwner, SnackbarErrorObserver(listView, this))
 		findPreference<StorageUsagePreference>(AppSettings.KEY_STORAGE_USAGE)?.let { pref ->
 			viewModel.storageUsage.observe(viewLifecycleOwner, pref)
@@ -85,6 +88,10 @@ class DownloadsSettingsFragment :
 			AppSettings.KEY_PAGES_SAVE_DIR -> {
 				findPreference<Preference>(AppSettings.KEY_PAGES_SAVE_DIR)?.bindPagesDirectory()
 			}
+
+			AppSettings.KEY_EDITOR_SAVE_DIR -> {
+				findPreference<Preference>(AppSettings.KEY_EDITOR_SAVE_DIR)?.bindEditorDirectory()
+			}
 		}
 	}
 
@@ -101,7 +108,18 @@ class DownloadsSettingsFragment :
 			}
 
 			AppSettings.KEY_PAGES_SAVE_DIR -> {
+				pendingDirTarget = AppSettings.KEY_PAGES_SAVE_DIR
 				if (!pickFileTreeLauncher.tryLaunch(settings.getPagesSaveDir(preference.context)?.uri)) {
+					Snackbar.make(
+						requireView(), R.string.operation_not_supported, Snackbar.LENGTH_SHORT,
+					).show()
+				}
+				true
+			}
+
+			AppSettings.KEY_EDITOR_SAVE_DIR -> {
+				pendingDirTarget = AppSettings.KEY_EDITOR_SAVE_DIR
+				if (!pickFileTreeLauncher.tryLaunch(settings.getEditorSaveDir(preference.context)?.uri)) {
 					Snackbar.make(
 						requireView(), R.string.operation_not_supported, Snackbar.LENGTH_SHORT,
 					).show()
@@ -118,7 +136,21 @@ class DownloadsSettingsFragment :
 		val doc = DocumentFile.fromTreeUri(requireContext(), uri)?.takeIf {
 			it.canWrite()
 		}
-		settings.setPagesSaveDir(doc?.uri)
+		when (pendingDirTarget) {
+			AppSettings.KEY_EDITOR_SAVE_DIR -> settings.setEditorSaveDir(doc?.uri)
+			else -> settings.setPagesSaveDir(doc?.uri)
+		}
+		pendingDirTarget = null
+	}
+
+	private fun Preference.bindEditorDirectory() {
+		viewLifecycleScope.launch {
+			val df = withContext(Dispatchers.IO) {
+				settings.getEditorSaveDir(this@bindEditorDirectory.context)
+			}
+			summary = df?.getDisplayPath(this@bindEditorDirectory.context)
+				?: this@bindEditorDirectory.context.getString(R.string.editor_save_dir_summary)
+		}
 	}
 
 	private fun Preference.bindStorageName() {

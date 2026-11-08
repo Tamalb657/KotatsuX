@@ -1,14 +1,17 @@
 package org.koitharu.kotatsu.reader.ui.crop
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.max
@@ -53,8 +56,12 @@ class CropDrawView @JvmOverloads constructor(
 
 	var onColorPicked: ((Int) -> Unit)? = null
 
+	/** Notifies that undo/redo availability changed, so buttons can enable or disable. */
+	var onHistoryChanged: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
+
 	val cropRect = RectF()
 	val strokes = ArrayList<Stroke>()
+	private val redoStack = ArrayList<Stroke>()
 
 	private val viewMatrix = Matrix()
 	private val inverseMatrix = Matrix()
@@ -63,14 +70,21 @@ class CropDrawView @JvmOverloads constructor(
 	private val dimPaint = Paint().apply {
 		color = 0x99000000.toInt()
 	}
+	private val rectOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+		style = Paint.Style.STROKE
+		color = Color.BLACK
+		strokeWidth = 5f
+	}
 	private val rectPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 		style = Paint.Style.STROKE
 		color = Color.WHITE
-		strokeWidth = 2f
+		strokeWidth = 2.5f
+		pathEffect = DashPathEffect(floatArrayOf(18f, 12f), 0f)
 	}
 	private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 		style = Paint.Style.FILL
 		color = Color.WHITE
+		setShadowLayer(10f, 0f, 0f, Color.BLACK)
 	}
 	private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 		style = Paint.Style.STROKE
@@ -84,21 +98,74 @@ class CropDrawView @JvmOverloads constructor(
 	private var dragStart = Point(0f, 0f)
 	private var dragRectStart = RectF()
 
+	private val dashAnimator = ValueAnimator.ofFloat(0f, 60f).apply {
+		duration = 900
+		repeatCount = ValueAnimator.INFINITE
+		addUpdateListener { animator ->
+			rectPaint.pathEffect = DashPathEffect(floatArrayOf(18f, 12f), animator.animatedValue as Float)
+			if (mode == Mode.CROP) {
+				invalidate()
+			}
+		}
+	}
+
+	private val doubleTapDetector = GestureDetector(
+		context,
+		object : GestureDetector.SimpleOnGestureListener() {
+			override fun onDoubleTap(e: MotionEvent): Boolean {
+				if (mode == Mode.CROP) {
+					resetCrop()
+					return true
+				}
+				return false
+			}
+		},
+	)
+
 	private enum class Handle {
 		TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, MOVE,
+	}
+
+	override fun onAttachedToWindow() {
+		super.onAttachedToWindow()
+		dashAnimator.start()
+	}
+
+	override fun onDetachedFromWindow() {
+		dashAnimator.cancel()
+		super.onDetachedFromWindow()
 	}
 
 	fun setBitmap(value: Bitmap) {
 		bitmap = value
 		cropRect.set(0f, 0f, value.width.toFloat(), value.height.toFloat())
 		strokes.clear()
+		redoStack.clear()
 		activeStroke = null
+		notifyHistoryChanged()
 		invalidate()
 	}
 
 	fun undo() {
-		strokes.removeLastOrNull()
+		val last = strokes.removeLastOrNull() ?: return
+		redoStack.add(last)
+		notifyHistoryChanged()
 		invalidate()
+	}
+
+	fun redo() {
+		val next = redoStack.removeLastOrNull() ?: return
+		strokes.add(next)
+		notifyHistoryChanged()
+		invalidate()
+	}
+
+	fun canUndo() = strokes.isNotEmpty() || activeStroke != null
+
+	fun canRedo() = redoStack.isNotEmpty()
+
+	private fun notifyHistoryChanged() {
+		onHistoryChanged?.invoke(canUndo(), canRedo())
 	}
 
 	fun resetCrop() {
@@ -133,6 +200,24 @@ class CropDrawView @JvmOverloads constructor(
 			canvas.drawPath(path, strokePaint)
 		}
 		return output
+	}
+
+	private fun drawStrokePath(canvas: Canvas, stroke: Stroke) {
+		strokePaint.color = stroke.color
+		strokePaint.strokeWidth = stroke.width
+		val path = Path()
+		val points = stroke.points
+		if (points.isEmpty()) {
+			return
+		}
+		path.moveTo(points[0].x, points[0].y)
+		for (i in 1 until points.size) {
+			path.lineTo(points[i].x, points[i].y)
+		}
+		if (points.size == 1) {
+			path.lineTo(points[0].x + 0.1f, points[0].y + 0.1f)
+		}
+		canvas.drawPath(path, strokePaint)
 	}
 
 	override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -173,6 +258,7 @@ class CropDrawView @JvmOverloads constructor(
 		canvas.clipRect(cropInView)
 		canvas.drawBitmap(bmp, viewMatrix, null)
 		canvas.restore()
+		canvas.drawRect(cropInView, rectOuterPaint)
 		canvas.drawRect(cropInView, rectPaint)
 		drawHandle(canvas, cropInView.left, cropInView.top)
 		drawHandle(canvas, cropInView.right, cropInView.top)
@@ -205,10 +291,9 @@ class CropDrawView @JvmOverloads constructor(
 	}
 
 	private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
-		val r = 14f
+		val r = 18f
 		canvas.drawCircle(x, y, r, handlePaint)
-		rectPaint.strokeWidth = 2f
-		canvas.drawCircle(x, y, r, rectPaint)
+		canvas.drawCircle(x, y, r, rectOuterPaint)
 	}
 
 	private fun toView(p: Point): android.graphics.PointF {
@@ -225,6 +310,7 @@ class CropDrawView @JvmOverloads constructor(
 
 	override fun onTouchEvent(event: MotionEvent): Boolean {
 		val bmp = bitmap ?: return false
+		doubleTapDetector.onTouchEvent(event)
 		when (mode) {
 			Mode.CROP -> {
 				when (event.actionMasked) {
@@ -305,8 +391,10 @@ class CropDrawView @JvmOverloads constructor(
 						if (!cropRect.contains(image.x, image.y)) {
 							return false
 						}
+						redoStack.clear()
 						activeStroke = Stroke(strokeColor, strokeWidth, mutableListOf(image))
 						parent?.requestDisallowInterceptTouchEvent(true)
+						notifyHistoryChanged()
 						invalidate()
 						return true
 					}
@@ -329,6 +417,7 @@ class CropDrawView @JvmOverloads constructor(
 							}
 						}
 						activeStroke = null
+						notifyHistoryChanged()
 						invalidate()
 						return true
 					}
