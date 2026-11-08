@@ -6,6 +6,7 @@ import android.view.MenuItem
 import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import org.koitharu.kotatsu.R
+import org.koitharu.kotatsu.gallery.ui.GalleryFragment
 import org.koitharu.kotatsu.core.nav.router
 
 class LocalListMenuProvider(
@@ -26,6 +27,14 @@ class LocalListMenuProvider(
 		return when (menuItem.itemId) {
 			R.id.action_import -> {
 				onImportClick()
+				true
+			}
+
+			R.id.action_gallery -> {
+				fragment.parentFragmentManager.beginTransaction()
+					.replace(R.id.container, GalleryFragment())
+					.addToBackStack(null)
+					.commit()
 				true
 			}
 

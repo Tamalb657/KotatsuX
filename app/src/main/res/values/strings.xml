@@ -68,6 +68,8 @@
     <string name="add_text">Add text</string>
     <string name="import_font">Import font…</string>
     <string name="text_hint">Type the caption…</string>
+    <string name="gallery">Gallery</string>
+    <string name="gallery_empty">Nothing here yet.\nImages you save from the reader or editor will show up here.</string>
     <string name="reset_crop">Reset crop</string>
     <string name="redo">Redo</string>
     <string name="image_editor">Image editor</string>

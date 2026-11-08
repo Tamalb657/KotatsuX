@@ -69,7 +69,13 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		super.onCreate(savedInstanceState)
 		setContentView(R.layout.activity_page_crop)
 		val path = intent.getStringExtra(EXTRA_FILE)
-		if (path.isNullOrEmpty()) {
+		val sourceUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+			intent.getParcelableExtra(EXTRA_URI, Uri::class.java)
+		} else {
+			@Suppress("DEPRECATION")
+			intent.getParcelableExtra(EXTRA_URI)
+		}
+		if (path.isNullOrEmpty() && sourceUri == null) {
 			finish()
 			return
 		}
@@ -139,7 +145,9 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 
 		lifecycleScope.launch {
 			val bitmap = withContext(Dispatchers.IO) {
-				runCatching { decodeFile(File(path)) }
+				runCatching {
+					if (path != null) decodeFile(File(path)) else decodeUri(sourceUri!!)
+				}
 					.onFailure { it.printStackTraceDebug() }
 					.getOrNull()
 			}
@@ -218,6 +226,15 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 	}
 
 	private fun decodeFile(file: File): Bitmap {
+		val sourceUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+			intent.getParcelableExtra(EXTRA_URI, Uri::class.java)
+		} else {
+			@Suppress("DEPRECATION")
+			intent.getParcelableExtra(EXTRA_URI)
+		}
+		if (sourceUri != null) {
+			return decodeUri(sourceUri)
+		}
 		val options = BitmapFactory.Options().apply {
 			inJustDecodeBounds = true
 		}
@@ -229,6 +246,22 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		return BitmapFactory.decodeFile(file.path, options2)
 			?: BitmapFactory.decodeFile(file.path, null)
 		?: throw IllegalStateException("Cannot decode page")
+	}
+
+	private fun decodeUri(uri: Uri): Bitmap {
+		contentResolver.openInputStream(uri)?.use { input ->
+			val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+			BitmapFactory.decodeStream(input, null, bounds)
+			check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Cannot decode page" }
+		} ?: throw IllegalStateException("Cannot open the image")
+		contentResolver.openInputStream(uri)?.use { input ->
+			val options = BitmapFactory.Options().apply {
+				inPreferredConfig = Bitmap.Config.ARGB_8888
+			}
+			return BitmapFactory.decodeStream(input, null, options)
+				?: throw IllegalStateException("Cannot decode page")
+		}
+		throw IllegalStateException("Cannot open the image")
 	}
 
 	private fun save() {
@@ -482,8 +515,12 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		)
 
 		private const val EXTRA_FILE = "file"
+		private const val EXTRA_URI = "uri"
 
 		fun newIntent(context: Context, file: File): Intent = Intent(context, PageCropActivity::class.java)
 			.putExtra(EXTRA_FILE, file.absolutePath)
+
+		fun newIntent(context: Context, uri: Uri): Intent = Intent(context, PageCropActivity::class.java)
+			.putExtra(EXTRA_URI, uri)
 	}
 }

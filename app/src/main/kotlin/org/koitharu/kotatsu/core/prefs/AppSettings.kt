@@ -72,9 +72,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		get() {
 			val raw = prefs.getString(KEY_NAV_MAIN, null)?.split(',')
 			return if (raw.isNullOrEmpty()) {
-				listOf(NavItem.HISTORY, NavItem.FAVORITES, NavItem.EXPLORE, NavItem.SOURCES, NavItem.FEED)
+				withGalleryTab(
+					listOf(NavItem.HISTORY, NavItem.FAVORITES, NavItem.EXPLORE, NavItem.SOURCES, NavItem.FEED),
+				)
 			} else {
-				withSourcesTab(raw.mapNotNull { x -> NavItem.entries.find(x) }.ifEmpty { listOf(NavItem.EXPLORE) })
+				withGalleryTab(withSourcesTab(raw.mapNotNull { x -> NavItem.entries.find(x) }.ifEmpty { listOf(NavItem.EXPLORE) }))
 			}
 		}
 		set(value) {
@@ -575,6 +577,28 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		return updated
 	}
 
+	/**
+	 * Offers the Gallery tab next to the local comics tab, once. Same rules as
+	 * [withSourcesTab]: only when the bar has room and only if the user has not
+	 * removed it again.
+	 */
+	private fun withGalleryTab(items: List<NavItem>): List<NavItem> {
+		if (prefs.getBoolean(KEY_NAV_GALLERY_OFFERED, false)) {
+			return items
+		}
+		prefs.edit { putBoolean(KEY_NAV_GALLERY_OFFERED, true) }
+		// the bar can hold six items in total, so the gallery may take the last slot
+		if (NavItem.GALLERY in items || items.size >= 6) {
+			return items
+		}
+		val index = items.indexOf(NavItem.LOCAL)
+		val updated = items.toMutableList().apply {
+			add(if (index >= 0) index + 1 else items.size, NavItem.GALLERY)
+		}
+		mainNavItems = updated
+		return updated
+	}
+
 	@get:FloatRange(from = 0.0, to = 0.5)
 	val defaultWebtoonZoomOut: Float
 		get() = prefs.getInt(KEY_WEBTOON_ZOOM_OUT, 0).coerceIn(0, 50) / 100f
@@ -944,6 +968,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		const val KEY_ERASE_TUTORIAL = "erase_tutorial"
 		const val TIP_ERASE_TUTORIAL = "erase_tutorial"
 		private const val KEY_NAV_SOURCES_OFFERED = "nav_sources_offered"
+		private const val KEY_NAV_GALLERY_OFFERED = "nav_gallery_offered"
 		private const val NAV_ITEMS_ALWAYS_FIT = 5
 		const val KEY_PREFETCH_CONTENT = "prefetch_content"
 		const val KEY_APP_LOCALE = "app_locale"

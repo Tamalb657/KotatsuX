@@ -4,6 +4,12 @@
 	xmlns:app="http://schemas.android.com/apk/res-auto">
 
 	<item
+		android:id="@+id/action_gallery"
+		android:orderInCategory="20"
+		android:title="@string/gallery"
+		app:showAsAction="never" />
+
+	<item
 		android:id="@+id/action_import"
 		android:orderInCategory="50"
 		android:title="@string/_import"

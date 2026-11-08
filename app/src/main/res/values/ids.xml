@@ -12,6 +12,7 @@
 	<item name="nav_history" type="id" />
 	<item name="nav_favorites" type="id" />
 	<item name="nav_local" type="id" />
+	<item name="nav_gallery" type="id" />
 	<item name="nav_explore" type="id" />
 	<item name="nav_sources" type="id" />
 	<item name="nav_feed" type="id" />

@@ -42,6 +42,7 @@ import org.koitharu.kotatsu.discover.ui.DiscoverFragment
 import org.koitharu.kotatsu.explore.ui.ExploreFragment
 import org.koitharu.kotatsu.favourites.ui.container.FavouritesContainerFragment
 import org.koitharu.kotatsu.history.ui.HistoryListFragment
+import org.koitharu.kotatsu.gallery.ui.GalleryFragment
 import org.koitharu.kotatsu.local.ui.LocalListFragment
 import org.koitharu.kotatsu.suggestions.ui.SuggestionsFragment
 import org.koitharu.kotatsu.tracker.ui.feed.FeedFragment
@@ -195,6 +196,7 @@ class MainNavigationDelegate(
 			R.id.nav_sources -> ExploreFragment::class.java
 			R.id.nav_feed -> FeedFragment::class.java
 			R.id.nav_local -> LocalListFragment::class.java
+			R.id.nav_gallery -> GalleryFragment::class.java
 			R.id.nav_suggestions -> SuggestionsFragment::class.java
 			R.id.nav_bookmarks -> AllBookmarksFragment::class.java
 			R.id.nav_updated -> UpdatesFragment::class.java
@@ -214,6 +216,7 @@ class MainNavigationDelegate(
 		is ExploreFragment -> R.id.nav_sources
 		is FeedFragment -> R.id.nav_feed
 		is LocalListFragment -> R.id.nav_local
+		is GalleryFragment -> R.id.nav_gallery
 		is SuggestionsFragment -> R.id.nav_suggestions
 		is AllBookmarksFragment -> R.id.nav_bookmarks
 		is UpdatesFragment -> R.id.nav_updated
