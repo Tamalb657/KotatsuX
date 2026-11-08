@@ -61,6 +61,7 @@
     <string name="crop">Crop</string>
     <string name="draw">Draw</string>
     <string name="pick_color">Pick colour</string>
+    <string name="eraser">Eraser</string>
     <string name="reset_crop">Reset crop</string>
     <string name="redo">Redo</string>
     <string name="image_editor">Image editor</string>

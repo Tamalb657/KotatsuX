@@ -9,6 +9,10 @@ import android.graphics.DashPathEffect
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -17,6 +21,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * An image editor view for the crop & save feature: shows a page, lets the user
@@ -29,13 +34,14 @@ class CropDrawView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
 	enum class Mode {
-		CROP, DRAW, PICK_COLOR,
+		CROP, DRAW, ERASE, PICK_COLOR,
 	}
 
 	class Stroke(
 		val color: Int,
 		val width: Float,
 		val points: MutableList<Point>,
+		val isEraser: Boolean = false,
 	)
 
 	class Point(val x: Float, val y: Float)
@@ -106,6 +112,37 @@ class CropDrawView @JvmOverloads constructor(
 	private var dragStart = Point(0f, 0f)
 	private var dragRectStart = RectF()
 
+	// drawing layer: strokes are rendered here once and blitted in onDraw;
+	// eraser strokes punch holes in it with Porter-Duff CLEAR
+	private var overlay: Bitmap? = null
+	private var overlayCanvas: Canvas? = null
+	private var overlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+		style = Paint.Style.STROKE
+		strokeCap = Paint.Cap.ROUND
+		strokeJoin = Paint.Join.ROUND
+	}
+
+	// colour-picker loupe state
+	private var loupePoint: PointF? = null
+	private var sampledColor = Color.WHITE
+	private val loupeRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+		style = Paint.Style.STROKE
+		color = Color.WHITE
+		strokeWidth = 4f
+	}
+	private val loupeRingOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+		style = Paint.Style.FILL
+		color = 0x66000000
+	}
+	private val loupeDiscPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+		style = Paint.Style.FILL
+	}
+	private val loupeCrossPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+		style = Paint.Style.STROKE
+		color = Color.WHITE
+		strokeWidth = 2f
+	}
+
 	private val dashAnimator = ValueAnimator.ofFloat(0f, 60f).apply {
 		duration = 900
 		repeatCount = ValueAnimator.INFINITE
@@ -161,6 +198,9 @@ class CropDrawView @JvmOverloads constructor(
 		redoStack.clear()
 		activeStroke = null
 		userMatrix.reset()
+		overlay = null
+		overlayCanvas = null
+		loupePoint = null
 		notifyHistoryChanged()
 		invalidate()
 	}
@@ -168,6 +208,7 @@ class CropDrawView @JvmOverloads constructor(
 	fun undo() {
 		val last = strokes.removeLastOrNull() ?: return
 		redoStack.add(last)
+		rebuildOverlay()
 		notifyHistoryChanged()
 		invalidate()
 	}
@@ -175,6 +216,7 @@ class CropDrawView @JvmOverloads constructor(
 	fun redo() {
 		val next = redoStack.removeLastOrNull() ?: return
 		strokes.add(next)
+		rebuildOverlay()
 		notifyHistoryChanged()
 		invalidate()
 	}
@@ -187,6 +229,80 @@ class CropDrawView @JvmOverloads constructor(
 		onHistoryChanged?.invoke(canUndo(), canRedo())
 	}
 
+	/** Renders every committed stroke onto the drawing layer from scratch. */
+	private fun rebuildOverlay() {
+		val bmp = bitmap ?: run {
+			overlay = null
+			overlayCanvas = null
+			return
+		}
+		if (strokes.isEmpty() && activeStroke == null) {
+			overlay = null
+			overlayCanvas = null
+			return
+		}
+		ensureOverlay()
+		val ov = overlay ?: return
+		ov.eraseColor(Color.TRANSPARENT)
+		val canvas = Canvas(ov)
+		overlayCanvas = canvas
+		for (stroke in strokes) {
+			drawStrokeOn(canvas, stroke)
+		}
+	}
+
+	/** Draws one stroke onto the drawing layer; eraser strokes punch holes with CLEAR. */
+	private fun drawStrokeOn(canvas: Canvas, stroke: Stroke) {
+		overlayPaint.color = stroke.color
+		overlayPaint.strokeWidth = stroke.width
+		overlayPaint.xfermode = if (stroke.isEraser) {
+			PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+		} else {
+			null
+		}
+		val points = stroke.points
+		if (points.isEmpty()) {
+			return
+		}
+		val path = Path()
+		path.moveTo(points[0].x, points[0].y)
+		for (i in 1 until points.size) {
+			path.lineTo(points[i].x, points[i].y)
+		}
+		if (points.size == 1) {
+			// a single tap makes a dot
+			path.lineTo(points[0].x + 0.1f, points[0].y + 0.1f)
+		}
+		canvas.drawPath(path, overlayPaint)
+	}
+
+	/** Draws just the newest segment (or the initial dot) of the active stroke. */
+	private fun drawActiveSegment(stroke: Stroke, fromIndex: Int) {
+		val canvas = overlayCanvas ?: return
+		val points = stroke.points
+		if (points.isEmpty()) {
+			return
+		}
+		overlayPaint.color = stroke.color
+		overlayPaint.strokeWidth = stroke.width
+		overlayPaint.xfermode = if (stroke.isEraser) xferClear else null
+		val path = Path()
+		if (fromIndex <= 0) {
+			// nothing before this point: draw a dot
+			val p = points[0]
+			path.moveTo(p.x, p.y)
+			path.lineTo(p.x + 0.1f, p.y + 0.1f)
+		} else {
+			val a = points[fromIndex - 1]
+			val b = points[fromIndex]
+			path.moveTo(a.x, a.y)
+			path.lineTo(b.x, b.y)
+		}
+		canvas.drawPath(path, overlayPaint)
+	}
+
+	private val xferClear = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+
 	fun resetCrop() {
 		val bmp = bitmap ?: return
 		cropRect.set(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())
@@ -197,46 +313,24 @@ class CropDrawView @JvmOverloads constructor(
 	fun renderOutput(): Bitmap {
 		val bmp = checkNotNull(bitmap) { "No bitmap to render" }
 		val rect = RectF(cropRect)
+		rebuildOverlay()
 		val output = Bitmap.createBitmap(rect.width().toInt().coerceAtLeast(1), rect.height().toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
 		val canvas = Canvas(output)
 		canvas.translate(-rect.left, -rect.top)
 		canvas.drawBitmap(bmp, 0f, 0f, null)
-		for (stroke in strokes) {
-			strokePaint.color = stroke.color
-			strokePaint.strokeWidth = stroke.width
-			val path = Path()
-			val points = stroke.points
-			if (points.isNotEmpty()) {
-				path.moveTo(points[0].x, points[0].y)
-				for (i in 1 until points.size) {
-					path.lineTo(points[i].x, points[i].y)
-				}
-				if (points.size == 1) {
-					// a single tap makes a dot
-					path.lineTo(points[0].x + 0.1f, points[0].y + 0.1f)
-				}
-			}
-			canvas.drawPath(path, strokePaint)
-		}
+		overlay?.let { canvas.drawBitmap(it, 0f, 0f, null) }
 		return output
 	}
 
-	private fun drawStrokePath(canvas: Canvas, stroke: Stroke) {
-		strokePaint.color = stroke.color
-		strokePaint.strokeWidth = stroke.width
-		val path = Path()
-		val points = stroke.points
-		if (points.isEmpty()) {
-			return
+	/** Makes sure the drawing-layer bitmap exists and matches the page size. */
+	private fun ensureOverlay() {
+		val bmp = bitmap ?: return
+		val ov = overlay
+		if (ov == null || ov.width != bmp.width || ov.height != bmp.height) {
+			val created = Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888)
+			overlay = created
+			overlayCanvas = Canvas(created)
 		}
-		path.moveTo(points[0].x, points[0].y)
-		for (i in 1 until points.size) {
-			path.lineTo(points[i].x, points[i].y)
-		}
-		if (points.size == 1) {
-			path.lineTo(points[0].x + 0.1f, points[0].y + 0.1f)
-		}
-		canvas.drawPath(path, strokePaint)
 	}
 
 	override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -284,31 +378,55 @@ class CropDrawView @JvmOverloads constructor(
 		drawHandle(canvas, cropInView.right, cropInView.top)
 		drawHandle(canvas, cropInView.left, cropInView.bottom)
 		drawHandle(canvas, cropInView.right, cropInView.bottom)
-		// strokes
-		for (stroke in strokes) {
-			drawStroke(canvas, stroke)
+		// the drawing layer with all marks (strokes + eraser holes)
+		overlay?.let { canvas.drawBitmap(it, viewMatrix, null) }
+		if (mode == Mode.PICK_COLOR) {
+			loupePoint?.let { drawLoupe(canvas, it) }
 		}
-		activeStroke?.let { drawStroke(canvas, it) }
 	}
 
-	private fun drawStroke(canvas: Canvas, stroke: Stroke) {
-		if (stroke.points.isEmpty()) {
-			return
-		}
-		strokePaint.color = stroke.color
-		strokePaint.strokeWidth = stroke.width * viewMatrix.mapRadius(1f)
-		val path = Path()
-		val first = toView(stroke.points[0])
-		path.moveTo(first.x, first.y)
-		for (i in 1 until stroke.points.size) {
-			val p = toView(stroke.points[i])
-			path.lineTo(p.x, p.y)
-		}
-		if (stroke.points.size == 1) {
-			path.lineTo(first.x + 0.1f, first.y + 0.1f)
-		}
-		canvas.drawPath(path, strokePaint)
+	private fun drawLoupe(canvas: Canvas, point: PointF) {
+		val bmp = bitmap ?: return
+		val r = 90f
+		val cx = point.x.coerceIn(r, width - r)
+		val cy = (point.y - 170f).coerceIn(r, height - r)
+		val image = toImage(point.x, point.y)
+		val zoom = 4f
+		val half = r / zoom
+		val src = Rect(
+			(image.x - half).roundToInt(),
+			(image.y - half).roundToInt(),
+			(image.x + half).roundToInt(),
+			(image.y + half).roundToInt(),
+		)
+		val dest = Rect(
+			(cx - r).roundToInt(),
+			(cy - r).roundToInt(),
+			(cx + r).roundToInt(),
+			(cy + r).roundToInt(),
+		)
+		val shadow = RectF(dest)
+		shadow.offset(0f, 5f)
+		canvas.drawOval(shadow, loupeRingOuterPaint)
+		val save2 = canvas.save()
+		canvas.clipPath(Path().apply { addOval(RectF(dest), Path.Direction.CW) })
+		canvas.drawBitmap(bmp, src, dest, null)
+		canvas.restoreToCount(save2)
+		canvas.drawOval(RectF(dest), loupeRingPaint)
+		val c = sampledColor
+		loupeDiscPaint.color = c
+		canvas.drawCircle(cx, cy, 16f, loupeDiscPaint)
+		canvas.drawCircle(cx, cy, 16f, loupeRingPaint)
+		val cl = if (c.isWhiteish()) Color.BLACK else Color.WHITE
+		loupeCrossPaint.color = cl
+		canvas.drawLine(cx - 26f, cy, cx - 18f, cy, loupeCrossPaint)
+		canvas.drawLine(cx + 18f, cy, cx + 26f, cy, loupeCrossPaint)
+		canvas.drawLine(cx, cy - 26f, cx, cy - 18f, loupeCrossPaint)
+		canvas.drawLine(cx, cy + 18f, cx, cy + 26f, loupeCrossPaint)
 	}
+
+	private fun Int.isWhiteish(): Boolean =
+		Color.red(this) > 235 && Color.green(this) > 235 && Color.blue(this) > 235
 
 	private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
 		val r = 18f
@@ -425,7 +543,10 @@ class CropDrawView @JvmOverloads constructor(
 
 	/** Drops the in-progress drag or stroke, so a pinch never leaves half-finished work. */
 	private fun cancelTransient() {
-		activeStroke = null
+		if (activeStroke != null) {
+			activeStroke = null
+			rebuildOverlay()
+		}
 		dragHandle = null
 	}
 
@@ -553,7 +674,7 @@ class CropDrawView @JvmOverloads constructor(
 				}
 			}
 
-			Mode.DRAW -> {
+			Mode.DRAW, Mode.ERASE -> {
 				when (event.actionMasked) {
 					MotionEvent.ACTION_DOWN -> {
 						val image = toImage(event.x, event.y)
@@ -561,7 +682,9 @@ class CropDrawView @JvmOverloads constructor(
 							return false
 						}
 						redoStack.clear()
-						activeStroke = Stroke(strokeColor, strokeWidth, mutableListOf(image))
+						activeStroke = Stroke(strokeColor, strokeWidth, mutableListOf(image), isEraser = mode == Mode.ERASE)
+						ensureOverlay()
+						drawActiveSegment(activeStroke!!, 0)
 						parent?.requestDisallowInterceptTouchEvent(true)
 						notifyHistoryChanged()
 						invalidate()
@@ -574,6 +697,7 @@ class CropDrawView @JvmOverloads constructor(
 						val last = stroke.points.lastOrNull()
 						if (last == null || (image.x - last.x) * (image.x - last.x) + (image.y - last.y) * (image.y - last.y) > 4f) {
 							stroke.points.add(image)
+							drawActiveSegment(stroke, stroke.points.size - 1)
 							invalidate()
 						}
 						return true
@@ -594,15 +718,30 @@ class CropDrawView @JvmOverloads constructor(
 			}
 
 			Mode.PICK_COLOR -> {
-				if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-					val image = toImage(event.x, event.y)
-					if (image.x >= 0 && image.y >= 0 && image.x < bmp.width && image.y < bmp.height) {
-						val pixel = bmp.getPixel(image.x.toInt(), image.y.toInt())
-						strokeColor = if (android.graphics.Color.alpha(pixel) == 0) Color.WHITE else pixel
-						onColorPicked?.invoke(strokeColor)
+				when (event.actionMasked) {
+					MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+						if (event.x >= 0f && event.y >= 0f && event.x <= width && event.y <= height) {
+							loupePoint = PointF(event.x, event.y)
+							val image = toImage(event.x, event.y)
+							val px = image.x.toInt().coerceIn(0, bmp.width - 1)
+							val py = image.y.toInt().coerceIn(0, bmp.height - 1)
+							sampledColor = bmp.getPixel(px, py)
+							invalidate()
+						}
+						return true
 					}
-					mode = Mode.DRAW
-					return true
+
+					MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+						val wasUp = event.actionMasked == MotionEvent.ACTION_UP
+						loupePoint = null
+						if (wasUp) {
+							strokeColor = sampledColor
+							onColorPicked?.invoke(strokeColor)
+						}
+						mode = Mode.DRAW
+						invalidate()
+						return true
+					}
 				}
 			}
 		}

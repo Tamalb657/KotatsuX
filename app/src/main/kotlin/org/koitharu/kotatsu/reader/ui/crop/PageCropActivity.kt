@@ -81,6 +81,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		}
 		findViewById<View>(R.id.button_eyedropper).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_draw).setOnClickListener(this)
+		findViewById<View>(R.id.button_mode_erase).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_crop).setOnClickListener(this)
 		findViewById<View>(R.id.button_undo).setOnClickListener(this)
 		findViewById<View>(R.id.button_redo).setOnClickListener(this)
@@ -128,6 +129,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		when (v.id) {
 			R.id.button_mode_crop -> setMode(CropDrawView.Mode.CROP)
 			R.id.button_mode_draw -> setMode(CropDrawView.Mode.DRAW)
+			R.id.button_mode_erase -> setMode(CropDrawView.Mode.ERASE)
 			R.id.button_eyedropper -> setMode(CropDrawView.Mode.PICK_COLOR)
 			R.id.button_undo -> cropView.undo()
 			R.id.button_redo -> cropView.redo()
@@ -151,6 +153,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		cropView.mode = mode
 		findViewById<View>(R.id.button_mode_crop).isSelected = mode == CropDrawView.Mode.CROP
 		findViewById<View>(R.id.button_mode_draw).isSelected = mode == CropDrawView.Mode.DRAW
+		findViewById<View>(R.id.button_mode_erase).isSelected = mode == CropDrawView.Mode.ERASE
 		findViewById<View>(R.id.button_eyedropper).isSelected = mode == CropDrawView.Mode.PICK_COLOR
 	}
 
