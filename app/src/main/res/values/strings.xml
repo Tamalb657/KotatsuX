@@ -63,6 +63,11 @@
     <string name="pick_color">Pick colour</string>
     <string name="eraser">Eraser</string>
     <string name="lasso">Lasso</string>
+    <string name="text">Text</string>
+    <string name="font">Font</string>
+    <string name="add_text">Add text</string>
+    <string name="import_font">Import font…</string>
+    <string name="text_hint">Type the caption…</string>
     <string name="reset_crop">Reset crop</string>
     <string name="redo">Redo</string>
     <string name="image_editor">Image editor</string>

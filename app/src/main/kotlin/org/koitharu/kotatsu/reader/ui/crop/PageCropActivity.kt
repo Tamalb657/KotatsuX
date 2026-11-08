@@ -7,18 +7,26 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +53,17 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 
 	private var paletteColors = IntArray(0)
 	private var selectedColorView: View? = null
+
+	private val fontNames = ArrayList<String>()
+	private val fontFiles = ArrayList<Typeface?>()
+	private var lastFontIndex = 0
+	private var pendingTextObject: TextObject? = null
+
+	private val fontImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+		if (uri != null) {
+			importFont(uri)
+		}
+	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
@@ -83,10 +102,16 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		findViewById<View>(R.id.button_mode_draw).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_erase).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_lasso).setOnClickListener(this)
+		findViewById<View>(R.id.button_mode_text).setOnClickListener(this)
 		findViewById<View>(R.id.button_mode_crop).setOnClickListener(this)
 		cropView.onCropShapeChanged = {
 			updateFormatButton()
 		}
+		cropView.onTextRequested = { obj ->
+			showTextDialog(obj)
+		}
+
+		loadFonts()
 		findViewById<View>(R.id.button_undo).setOnClickListener(this)
 		findViewById<View>(R.id.button_redo).setOnClickListener(this)
 		findViewById<View>(R.id.button_reset).setOnClickListener(this)
@@ -135,6 +160,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 			R.id.button_mode_draw -> setMode(CropDrawView.Mode.DRAW)
 			R.id.button_mode_erase -> setMode(CropDrawView.Mode.ERASE)
 			R.id.button_mode_lasso -> setMode(CropDrawView.Mode.LASSO)
+			R.id.button_mode_text -> setMode(CropDrawView.Mode.TEXT)
 			R.id.button_eyedropper -> setMode(CropDrawView.Mode.PICK_COLOR)
 			R.id.button_undo -> cropView.undo()
 			R.id.button_redo -> cropView.redo()
@@ -160,6 +186,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		findViewById<View>(R.id.button_mode_draw).isSelected = mode == CropDrawView.Mode.DRAW
 		findViewById<View>(R.id.button_mode_erase).isSelected = mode == CropDrawView.Mode.ERASE
 		findViewById<View>(R.id.button_mode_lasso).isSelected = mode == CropDrawView.Mode.LASSO
+		findViewById<View>(R.id.button_mode_text).isSelected = mode == CropDrawView.Mode.TEXT
 		findViewById<View>(R.id.button_eyedropper).isSelected = mode == CropDrawView.Mode.PICK_COLOR
 	}
 
@@ -310,6 +337,128 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 	override fun onSupportNavigateUp(): Boolean {
 		finish()
 		return true
+	}
+
+	private fun loadFonts() {
+		fontNames.clear()
+		fontFiles.clear()
+		runCatching {
+			for (name in assets.list("fonts").orEmpty().sorted()) {
+				val tf = runCatching { Typeface.createFromAsset(assets, "fonts/$name") }.getOrNull()
+				if (tf != null) {
+					fontNames.add(name.removeSuffix(".ttf"))
+					fontFiles.add(tf)
+				}
+			}
+		}.onFailure { it.printStackTraceDebug() }
+		val dir = File(filesDir, "fonts")
+		dir.listFiles()?.sortedBy { it.name }?.forEach { f ->
+			val tf = runCatching { Typeface.createFromFile(f) }.getOrNull()
+			if (tf != null) {
+				fontNames.add(f.name.removeSuffix(".ttf"))
+				fontFiles.add(tf)
+			}
+		}
+	}
+
+	private fun importFont(uri: Uri) {
+		lifecycleScope.launch {
+			val done = withContext(Dispatchers.IO) {
+				runCatching {
+					val dir = File(filesDir, "fonts").apply { mkdirs() }
+					var name = "font.ttf"
+					contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+						val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+						if (idx >= 0 && cursor.moveToFirst()) {
+							name = cursor.getString(idx) ?: name
+						}
+					}
+					if (!name.endsWith(".ttf", true) && !name.endsWith(".otf", true)) {
+						name += ".ttf"
+					}
+					val target = File(dir, name)
+					contentResolver.openInputStream(uri)?.use { input ->
+						target.outputStream().use { output ->
+							input.copyTo(output)
+						}
+					} ?: throw IllegalStateException("Cannot open the font file")
+					return@runCatching name
+				}.onFailure { it.printStackTraceDebug() }.getOrNull()
+			}
+			if (done != null) {
+				loadFonts()
+				Toast.makeText(this@PageCropActivity, done, Toast.LENGTH_SHORT).show()
+				showTextDialog(pendingTextObject)
+			}
+		}
+	}
+
+	private fun showTextDialog(edit: TextObject?) {
+		pendingTextObject = edit
+		val container = LinearLayout(this).apply {
+			orientation = LinearLayout.VERTICAL
+			val pad = (resources.displayMetrics.density * 20).toInt()
+			setPadding(pad, pad / 2, pad, 0)
+		}
+		val input = EditText(this).apply {
+			hint = getString(R.string.text_hint)
+			setText(edit?.text.orEmpty())
+			setSingleLine(false)
+			maxLines = 3
+		}
+		val spinner = Spinner(this)
+		val items = ArrayList(fontNames).apply { add(getString(R.string.import_font)) }
+		spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
+		spinner.setSelection(
+			when {
+				edit != null -> fontNames.indexOfFirst { it == edit.fontName }.coerceAtLeast(0)
+				else -> lastFontIndex.coerceIn(0, (fontNames.size - 1).coerceAtLeast(0))
+			},
+		)
+		spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+			override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+				if (position == fontNames.size) {
+					fontImportLauncher.launch(arrayOf("font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf", "application/octet-stream"))
+				}
+			}
+
+			override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+		}
+		container.addView(input, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+		container.addView(spinner, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+		MaterialAlertDialogBuilder(this)
+			.setTitle(if (edit == null) R.string.add_text else R.string.edit)
+			.setView(container)
+			.setPositiveButton(if (edit == null) R.string.add else R.string.save) { _, _ ->
+				val text = input.text.toString().trim()
+				val pos = spinner.selectedItemPosition
+				if (text.isNotEmpty() && pos in fontNames.indices) {
+					val tf = fontFiles[pos]
+					if (edit == null) {
+						val bmp = cropView.bitmap
+						val size = ((bmp?.height ?: 1000) / 14f).coerceAtLeast(24f)
+						val obj = TextObject(
+							text = text,
+							fontName = fontNames[pos],
+							typeface = tf,
+							color = cropView.strokeColor,
+							size = size,
+							x = (bmp?.width ?: 600) / 2f,
+							y = (bmp?.height ?: 800) / 2f,
+						)
+						cropView.textObjects.add(obj)
+						cropView.selectedText = obj
+					} else {
+						edit.text = text
+						edit.fontName = fontNames[pos]
+						edit.typeface = tf
+					}
+					lastFontIndex = pos
+					cropView.invalidate()
+				}
+			}
+			.setNegativeButton(android.R.string.cancel, null)
+			.show()
 	}
 
 	companion object {
