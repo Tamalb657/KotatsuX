@@ -73,7 +73,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 			val raw = prefs.getString(KEY_NAV_MAIN, null)?.split(',')
 			return if (raw.isNullOrEmpty()) {
 				withGalleryTab(
-					listOf(NavItem.HISTORY, NavItem.FAVORITES, NavItem.EXPLORE, NavItem.SOURCES, NavItem.FEED),
+					listOf(NavItem.HISTORY, NavItem.FAVORITES, NavItem.EXPLORE, NavItem.SOURCES, NavItem.GALLERY, NavItem.FEED),
 				)
 			} else {
 				withGalleryTab(withSourcesTab(raw.mapNotNull { x -> NavItem.entries.find(x) }.ifEmpty { listOf(NavItem.EXPLORE) }))
@@ -592,8 +592,14 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 			return items
 		}
 		val index = items.indexOf(NavItem.LOCAL)
+		val feedIndex = items.indexOf(NavItem.FEED)
+		val insertAt = when {
+			index >= 0 -> index + 1
+			feedIndex >= 0 -> feedIndex
+			else -> items.size
+		}
 		val updated = items.toMutableList().apply {
-			add(if (index >= 0) index + 1 else items.size, NavItem.GALLERY)
+			add(insertAt, NavItem.GALLERY)
 		}
 		mainNavItems = updated
 		return updated
