@@ -59,7 +59,7 @@ class RecoveryKeyTest {
 			"   " to "whitespace",
 			"hello" to "a word",
 			"my recovery key is lost" to "a sentence",
-			"https://github.com/sponsors/Kotatsu-Redo" to "a url",
+			"https://github.com/sponsors/KotatsuX" to "a url",
 			"raph#4f2a" to "a display name",
 			"AAAA" to "far too short",
 			"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" to "far too long",

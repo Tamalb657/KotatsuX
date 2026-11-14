@@ -10,7 +10,7 @@ const val COMMUNITY_DATABASE_VERSION = 2
 /**
  * A **separate** Room database, deliberately not part of [org.koitharu.kotatsu.core.db.MangaDatabase].
  *
- * Kotatsu-Redo tracks upstream Kotatsu. `MangaDatabase` is at version 28, and if upstream ships its
+ * KotatsuX tracks upstream Kotatsu. `MangaDatabase` is at version 28, and if upstream ships its
  * own `Migration28To29` while this fork also adds one, every rebase becomes a conflict and users'
  * databases diverge in ways that are painful to unpick. Keeping community data in its own file with
  * its own version line sidesteps that permanently and keeps the diff against upstream small - which

@@ -24,6 +24,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -143,6 +144,15 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 			}
 		}
 
+		findViewById<Slider>(R.id.slider_erase)?.apply {
+			value = settings.editorStrokeWidth.coerceIn(5f, 120f)
+			addOnChangeListener { _, value, fromUser ->
+				if (fromUser) {
+					setStrokeWidth(value)
+				}
+			}
+		}
+
 		lifecycleScope.launch {
 			val bitmap = withContext(Dispatchers.IO) {
 				runCatching {
@@ -196,6 +206,20 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 		findViewById<View>(R.id.button_mode_lasso).isSelected = mode == CropDrawView.Mode.LASSO
 		findViewById<View>(R.id.button_mode_text).isSelected = mode == CropDrawView.Mode.TEXT
 		findViewById<View>(R.id.button_eyedropper).isSelected = mode == CropDrawView.Mode.PICK_COLOR
+
+		val isCropOrLasso = mode == CropDrawView.Mode.CROP || mode == CropDrawView.Mode.LASSO
+		val isDrawOrText = mode == CropDrawView.Mode.DRAW || mode == CropDrawView.Mode.PICK_COLOR || mode == CropDrawView.Mode.TEXT
+		val isErase = mode == CropDrawView.Mode.ERASE
+
+		findViewById<View>(R.id.layout_options_crop)?.isVisible = isCropOrLasso
+		findViewById<View>(R.id.layout_options_draw)?.isVisible = isDrawOrText
+		findViewById<View>(R.id.layout_options_erase)?.isVisible = isErase
+
+		if (isCropOrLasso) {
+			findViewById<TextView>(R.id.textView_crop_hint)?.setText(
+				if (mode == CropDrawView.Mode.LASSO) R.string.lasso else R.string.crop
+			)
+		}
 	}
 
 	private fun setStrokeWidth(width: Float) {

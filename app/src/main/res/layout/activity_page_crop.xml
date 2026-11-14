@@ -5,20 +5,72 @@
 	xmlns:tools="http://schemas.android.com/tools"
 	android:layout_width="match_parent"
 	android:layout_height="match_parent"
-	android:background="#FF14161B"
+	android:background="#FF121418"
 	android:orientation="vertical">
 
 	<com.google.android.material.appbar.AppBarLayout
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
-		android:fitsSystemWindows="true">
+		android:background="#FF121418"
+		android:fitsSystemWindows="true"
+		app:elevation="0dp">
 
 		<com.google.android.material.appbar.MaterialToolbar
 			android:id="@+id/toolbar"
 			android:layout_width="match_parent"
 			android:layout_height="?actionBarSize"
+			app:navigationIcon="?homeAsUpIndicator"
 			app:title="@string/crop_and_save"
-			app:titleTextAppearance="?textAppearanceTitleMedium" />
+			app:titleTextAppearance="?textAppearanceTitleMedium">
+
+			<LinearLayout
+				android:layout_width="wrap_content"
+				android:layout_height="match_parent"
+				android:layout_gravity="end"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingEnd="12dp">
+
+				<com.google.android.material.button.MaterialButton
+					android:id="@+id/button_undo"
+					style="@style/Widget.Material3.Button.IconButton"
+					android:layout_width="38dp"
+					android:layout_height="38dp"
+					android:contentDescription="@string/undo"
+					app:icon="@drawable/ic_undo"
+					app:iconTint="?attr/colorOnSurface" />
+
+				<com.google.android.material.button.MaterialButton
+					android:id="@+id/button_redo"
+					style="@style/Widget.Material3.Button.IconButton"
+					android:layout_width="38dp"
+					android:layout_height="38dp"
+					android:contentDescription="@string/redo"
+					app:icon="@drawable/ic_redo"
+					app:iconTint="?attr/colorOnSurface" />
+
+				<com.google.android.material.button.MaterialButton
+					android:id="@+id/button_reset"
+					style="@style/Widget.Material3.Button.IconButton"
+					android:layout_width="38dp"
+					android:layout_height="38dp"
+					android:contentDescription="@string/reset_crop"
+					app:icon="@drawable/ic_reset"
+					app:iconTint="?attr/colorOnSurface" />
+
+				<com.google.android.material.button.MaterialButton
+					android:id="@+id/button_save"
+					style="@style/Widget.Material3.Button"
+					android:layout_width="wrap_content"
+					android:layout_height="38dp"
+					android:layout_marginStart="4dp"
+					android:insetTop="0dp"
+					android:insetBottom="0dp"
+					android:paddingHorizontal="14dp"
+					android:text="@string/save"
+					app:icon="@drawable/ic_save" />
+			</LinearLayout>
+		</com.google.android.material.appbar.MaterialToolbar>
 	</com.google.android.material.appbar.AppBarLayout>
 
 	<org.koitharu.kotatsu.reader.ui.crop.CropDrawView
@@ -27,234 +79,290 @@
 		android:layout_height="0dp"
 		android:layout_weight="1" />
 
+	<!-- Bottom panel with rounded top and contextual options -->
 	<LinearLayout
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
-		android:background="?android:colorBackground"
+		android:background="@drawable/bg_editor_sheet"
+		android:elevation="8dp"
 		android:orientation="vertical"
-		android:paddingHorizontal="12dp"
-		android:paddingTop="8dp">
+		android:paddingHorizontal="14dp"
+		android:paddingTop="12dp"
+		android:paddingBottom="8dp">
 
-		<LinearLayout
+		<!-- Contextual Options Strip -->
+		<FrameLayout
+			android:id="@+id/panel_options"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:gravity="center_vertical"
+			android:minHeight="48dp">
+
+			<!-- Crop / Lasso contextual options -->
+			<LinearLayout
+				android:id="@+id/layout_options_crop"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingVertical="4dp">
+
+				<TextView
+					android:id="@+id/textView_crop_hint"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:text="@string/crop"
+					android:textAppearance="?textAppearanceBodyMedium"
+					android:textColor="?android:attr/textColorSecondary" />
+
+				<com.google.android.material.button.MaterialButton
+					android:id="@+id/button_format"
+					style="@style/Widget.Material3.Button.OutlinedButton"
+					android:layout_width="wrap_content"
+					android:layout_height="36dp"
+					android:insetTop="0dp"
+					android:insetBottom="0dp"
+					android:paddingHorizontal="12dp"
+					android:text="@string/editor_export_png"
+					android:textSize="12sp" />
+			</LinearLayout>
+
+			<!-- Draw / Color / Text contextual options -->
+			<LinearLayout
+				android:id="@+id/layout_options_draw"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:orientation="vertical"
+				android:visibility="gone">
+
+				<!-- Palette & Eyedropper Row -->
+				<LinearLayout
+					android:layout_width="match_parent"
+					android:layout_height="wrap_content"
+					android:gravity="center_vertical"
+					android:orientation="horizontal">
+
+					<View
+						android:id="@+id/swatch_0"
+						android:layout_width="30dp"
+						android:layout_height="30dp"
+						android:layout_marginEnd="8dp"
+						android:background="@drawable/bg_color_swatch"
+						tools:backgroundTint="@android:color/black" />
+
+					<View
+						android:id="@+id/swatch_1"
+						android:layout_width="30dp"
+						android:layout_height="30dp"
+						android:layout_marginEnd="8dp"
+						android:background="@drawable/bg_color_swatch" />
+
+					<View
+						android:id="@+id/swatch_2"
+						android:layout_width="30dp"
+						android:layout_height="30dp"
+						android:layout_marginEnd="8dp"
+						android:background="@drawable/bg_color_swatch" />
+
+					<View
+						android:id="@+id/swatch_3"
+						android:layout_width="30dp"
+						android:layout_height="30dp"
+						android:layout_marginEnd="8dp"
+						android:background="@drawable/bg_color_swatch" />
+
+					<View
+						android:id="@+id/swatch_4"
+						android:layout_width="30dp"
+						android:layout_height="30dp"
+						android:layout_marginEnd="8dp"
+						android:background="@drawable/bg_color_swatch" />
+
+					<View
+						android:id="@+id/swatch_5"
+						android:layout_width="30dp"
+						android:layout_height="30dp"
+						android:background="@drawable/bg_color_swatch" />
+
+					<View
+						android:layout_width="0dp"
+						android:layout_height="1dp"
+						android:layout_weight="1" />
+
+					<com.google.android.material.button.MaterialButton
+						android:id="@+id/button_eyedropper"
+						style="@style/Widget.Material3.Button.TonalButton"
+						android:layout_width="wrap_content"
+						android:layout_height="36dp"
+						android:insetTop="0dp"
+						android:insetBottom="0dp"
+						android:paddingHorizontal="10dp"
+						android:text="@string/pick_color"
+						android:textSize="12sp"
+						app:icon="@drawable/ic_color_lens" />
+				</LinearLayout>
+
+				<!-- Slider Row -->
+				<LinearLayout
+					android:layout_width="match_parent"
+					android:layout_height="wrap_content"
+					android:layout_marginTop="2dp"
+					android:gravity="center_vertical"
+					android:orientation="horizontal">
+
+					<TextView
+						android:id="@+id/textView_stroke_width"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:gravity="center"
+						android:minWidth="36dp"
+						android:text="@string/stroke_width"
+						android:textAppearance="?textAppearanceLabelMedium" />
+
+					<com.google.android.material.slider.Slider
+						android:id="@+id/slider_stroke"
+						android:layout_width="0dp"
+						android:layout_height="wrap_content"
+						android:layout_weight="1"
+						android:stepSize="1"
+						android:valueFrom="1"
+						android:valueTo="100" />
+				</LinearLayout>
+			</LinearLayout>
+
+			<!-- Erase options -->
+			<LinearLayout
+				android:id="@+id/layout_options_erase"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:orientation="vertical"
+				android:visibility="gone">
+
+				<LinearLayout
+					android:layout_width="match_parent"
+					android:layout_height="wrap_content"
+					android:gravity="center_vertical"
+					android:orientation="horizontal">
+
+					<TextView
+						android:id="@+id/textView_erase_label"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:gravity="center"
+						android:minWidth="36dp"
+						android:text="@string/eraser"
+						android:textAppearance="?textAppearanceLabelMedium" />
+
+					<com.google.android.material.slider.Slider
+						android:id="@+id/slider_erase"
+						android:layout_width="0dp"
+						android:layout_height="wrap_content"
+						android:layout_weight="1"
+						android:stepSize="1"
+						android:valueFrom="5"
+						android:valueTo="120" />
+				</LinearLayout>
+			</LinearLayout>
+		</FrameLayout>
+
+		<!-- Divider -->
+		<View
+			android:layout_width="match_parent"
+			android:layout_height="1dp"
+			android:layout_marginVertical="6dp"
+			android:background="?attr/colorOutlineVariant" />
+
+		<!-- Bottom Tools Bar -->
+		<LinearLayout
+			android:id="@+id/bottom_tools_bar"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:gravity="center"
 			android:orientation="horizontal">
 
 			<com.google.android.material.button.MaterialButton
 				android:id="@+id/button_mode_crop"
 				style="@style/Widget.Material3.Button.TonalButton"
-				android:minWidth="0dp"
-				android:insetLeft="2dp"
-				android:insetRight="2dp"
-				android:paddingLeft="4dp"
-				android:paddingRight="4dp"
-				android:textSize="12sp"
 				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_marginEnd="6dp"
+				android:layout_height="40dp"
+				android:layout_marginEnd="4dp"
 				android:layout_weight="1"
+				android:insetLeft="0dp"
+				android:insetRight="0dp"
+				android:insetTop="0dp"
+				android:insetBottom="0dp"
+				android:paddingHorizontal="4dp"
 				android:text="@string/crop"
-				/>
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_draw"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:minWidth="0dp"
-				android:insetLeft="2dp"
-				android:insetRight="2dp"
-				android:paddingLeft="4dp"
-				android:paddingRight="4dp"
-				android:textSize="12sp"
-				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_marginEnd="6dp"
-				android:layout_weight="1"
-				android:text="@string/draw"
-				/>
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_erase"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:minWidth="0dp"
-				android:insetLeft="2dp"
-				android:insetRight="2dp"
-				android:paddingLeft="4dp"
-				android:paddingRight="4dp"
-				android:textSize="12sp"
-				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_marginEnd="6dp"
-				android:layout_weight="1"
-				android:text="@string/eraser"
-				/>
+				android:textSize="11sp"
+				app:icon="@drawable/ic_crop"
+				app:iconSize="16dp" />
 
 			<com.google.android.material.button.MaterialButton
 				android:id="@+id/button_mode_lasso"
 				style="@style/Widget.Material3.Button.TonalButton"
-				android:minWidth="0dp"
-				android:insetLeft="2dp"
-				android:insetRight="2dp"
-				android:paddingLeft="4dp"
-				android:paddingRight="4dp"
-				android:textSize="12sp"
 				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_marginEnd="6dp"
+				android:layout_height="40dp"
+				android:layout_marginEnd="4dp"
 				android:layout_weight="1"
+				android:insetLeft="0dp"
+				android:insetRight="0dp"
+				android:insetTop="0dp"
+				android:insetBottom="0dp"
+				android:paddingHorizontal="4dp"
 				android:text="@string/lasso"
-				/>
+				android:textSize="11sp"
+				app:icon="@drawable/ic_lasso"
+				app:iconSize="16dp" />
+
+			<com.google.android.material.button.MaterialButton
+				android:id="@+id/button_mode_draw"
+				style="@style/Widget.Material3.Button.TonalButton"
+				android:layout_width="0dp"
+				android:layout_height="40dp"
+				android:layout_marginEnd="4dp"
+				android:layout_weight="1"
+				android:insetLeft="0dp"
+				android:insetRight="0dp"
+				android:insetTop="0dp"
+				android:insetBottom="0dp"
+				android:paddingHorizontal="4dp"
+				android:text="@string/draw"
+				android:textSize="11sp"
+				app:icon="@drawable/ic_brush"
+				app:iconSize="16dp" />
+
+			<com.google.android.material.button.MaterialButton
+				android:id="@+id/button_mode_erase"
+				style="@style/Widget.Material3.Button.TonalButton"
+				android:layout_width="0dp"
+				android:layout_height="40dp"
+				android:layout_marginEnd="4dp"
+				android:layout_weight="1"
+				android:insetLeft="0dp"
+				android:insetRight="0dp"
+				android:insetTop="0dp"
+				android:insetBottom="0dp"
+				android:paddingHorizontal="4dp"
+				android:text="@string/eraser"
+				android:textSize="11sp"
+				app:icon="@drawable/ic_eraser"
+				app:iconSize="16dp" />
 
 			<com.google.android.material.button.MaterialButton
 				android:id="@+id/button_mode_text"
 				style="@style/Widget.Material3.Button.TonalButton"
-				android:minWidth="0dp"
-				android:insetLeft="2dp"
-				android:insetRight="2dp"
-				android:paddingLeft="4dp"
-				android:paddingRight="4dp"
-				android:textSize="12sp"
 				android:layout_width="0dp"
-				android:layout_height="wrap_content"
+				android:layout_height="40dp"
 				android:layout_weight="1"
+				android:insetLeft="0dp"
+				android:insetRight="0dp"
+				android:insetTop="0dp"
+				android:insetBottom="0dp"
+				android:paddingHorizontal="4dp"
 				android:text="@string/text"
-				/>
-		</LinearLayout>
-
-		<LinearLayout
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:layout_marginTop="8dp"
-			android:gravity="center_vertical"
-			android:orientation="horizontal">
-
-			<View
-				android:id="@+id/swatch_0"
-				android:layout_width="28dp"
-				android:layout_height="28dp"
-				android:layout_marginEnd="6dp"
-				android:background="@drawable/bg_color_swatch"
-				tools:backgroundTint="@android:color/black" />
-
-			<View
-				android:id="@+id/swatch_1"
-				android:layout_width="28dp"
-				android:layout_height="28dp"
-				android:layout_marginEnd="6dp"
-				android:background="@drawable/bg_color_swatch" />
-
-			<View
-				android:id="@+id/swatch_2"
-				android:layout_width="28dp"
-				android:layout_height="28dp"
-				android:layout_marginEnd="6dp"
-				android:background="@drawable/bg_color_swatch" />
-
-			<View
-				android:id="@+id/swatch_3"
-				android:layout_width="28dp"
-				android:layout_height="28dp"
-				android:layout_marginEnd="6dp"
-				android:background="@drawable/bg_color_swatch" />
-
-			<View
-				android:id="@+id/swatch_4"
-				android:layout_width="28dp"
-				android:layout_height="28dp"
-				android:layout_marginEnd="6dp"
-				android:background="@drawable/bg_color_swatch" />
-
-			<View
-				android:id="@+id/swatch_5"
-				android:layout_width="28dp"
-				android:layout_height="28dp"
-				android:background="@drawable/bg_color_swatch" />
-
-			<View
-				android:layout_width="0dp"
-				android:layout_height="1dp"
-				android:layout_weight="1" />
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_eyedropper"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:minWidth="0dp"
-				android:insetLeft="2dp"
-				android:insetRight="2dp"
-				android:paddingLeft="6dp"
-				android:paddingRight="6dp"
-				android:textSize="12sp"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:layout_marginEnd="8dp"
-				android:text="@string/pick_color" />
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_save"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:text="@string/save" />
-		</LinearLayout>
-
-		<LinearLayout
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:gravity="center_vertical"
-			android:orientation="horizontal">
-
-			<TextView
-				android:id="@+id/textView_stroke_width"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:gravity="center"
-				android:minWidth="44dp"
-				android:text="@string/stroke_width" />
-
-			<com.google.android.material.slider.Slider
-				android:id="@+id/slider_stroke"
-				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_weight="1"
-				android:valueFrom="1"
-				android:valueTo="100"
-				android:stepSize="1" />
-		</LinearLayout>
-
-		<LinearLayout
-			android:layout_width="match_parent"
-			android:layout_height="wrap_content"
-			android:layout_marginBottom="8dp"
-			android:gravity="center_vertical"
-			android:orientation="horizontal">
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_format"
-				style="@style/Widget.Material3.Button.OutlinedButton"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:layout_marginEnd="8dp"
-				android:text="@string/editor_export_png" />
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_undo"
-				style="@style/Widget.Material3.Button.TextButton"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:text="@string/undo" />
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_redo"
-				style="@style/Widget.Material3.Button.TextButton"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:text="@string/redo" />
-
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_reset"
-				style="@style/Widget.Material3.Button.TextButton"
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:text="@string/reset_crop" />
+				android:textSize="11sp"
+				app:icon="@drawable/ic_text"
+				app:iconSize="16dp" />
 		</LinearLayout>
 	</LinearLayout>
 </LinearLayout>
