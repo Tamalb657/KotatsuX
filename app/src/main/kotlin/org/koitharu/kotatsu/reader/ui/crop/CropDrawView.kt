@@ -85,8 +85,11 @@ class CropDrawView @JvmOverloads constructor(
 	private var textDragMode = TextDragMode.NONE
 	private var textDragLast = PointF()
 	private var textRotateLast = 0f
+	private var textScaleLastDist = 0f
+	private var textScaleInitialSize = 0f
+	private var lastTextTapTime = 0L
 
-	private enum class TextDragMode { NONE, MOVE, ROTATE }
+	private enum class TextDragMode { NONE, MOVE, ROTATE, SCALE }
 
 	/** Notifies that undo/redo availability changed, so buttons can enable or disable. */
 	var onHistoryChanged: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
@@ -876,33 +879,53 @@ class CropDrawView @JvmOverloads constructor(
 			Mode.TEXT -> {
 				when (event.actionMasked) {
 					MotionEvent.ACTION_DOWN -> {
-						val image = toImage(event.x, event.y)
-						val hit = hitTextObject(image.x, image.y)
-						if (hit != null) {
-							selectedText = hit
-							textDragMode = TextDragMode.MOVE
-							textDragLast = PointF(event.x, event.y)
-							invalidate()
-							return true
-						}
 						val sel = selectedText
 						if (sel != null) {
-							if (hitRotateHandle(event.x, event.y, sel)) {
-								textDragMode = TextDragMode.ROTATE
-								textRotateLast = angleTo(sel, event.x, event.y)
-								invalidate()
-								return true
-							}
 							if (hitDeleteButton(event.x, event.y, sel)) {
 								textObjects.remove(sel)
 								selectedText = null
 								invalidate()
 								return true
 							}
+							if (hitRotateHandle(event.x, event.y, sel)) {
+								textDragMode = TextDragMode.ROTATE
+								textRotateLast = angleTo(sel, event.x, event.y)
+								invalidate()
+								return true
+							}
+							if (hitScaleHandle(event.x, event.y, sel)) {
+								textDragMode = TextDragMode.SCALE
+								textScaleLastDist = distTo(sel, event.x, event.y)
+								textScaleInitialSize = sel.size
+								invalidate()
+								return true
+							}
 						}
-						// empty spot: deselect and ask the activity for a new caption
-						selectedText = null
-						invalidate()
+
+						val image = toImage(event.x, event.y)
+						val hit = hitTextObject(image.x, image.y)
+						if (hit != null) {
+							val now = System.currentTimeMillis()
+							if (hit === selectedText && now - lastTextTapTime < 350L) {
+								onTextRequested?.invoke(hit)
+							} else {
+								selectedText = hit
+								textDragMode = TextDragMode.MOVE
+								textDragLast = PointF(event.x, event.y)
+							}
+							lastTextTapTime = now
+							invalidate()
+							return true
+						}
+
+						// empty spot: if something was selected, simply deselect it
+						if (selectedText != null) {
+							selectedText = null
+							invalidate()
+							return true
+						}
+
+						// empty spot and nothing was selected: ask activity for new text
 						onTextRequested?.invoke(null)
 						return true
 					}
@@ -929,6 +952,18 @@ class CropDrawView @JvmOverloads constructor(
 								sel.rotationDeg += delta
 								textRotateLast = angle
 								invalidate()
+								return true
+							}
+
+							TextDragMode.SCALE -> {
+								val sel = selectedText ?: return false
+								val currentDist = distTo(sel, event.x, event.y)
+								if (textScaleLastDist > 10f) {
+									val factor = currentDist / textScaleLastDist
+									sel.size = (textScaleInitialSize * factor).coerceIn(16f, 400f)
+									sel.measure(textPaint)
+									invalidate()
+								}
 								return true
 							}
 
@@ -981,11 +1016,9 @@ class CropDrawView @JvmOverloads constructor(
 			val t = textObjects[i]
 			t.measure(paint)
 			val local = t.toLocal(ix, iy)
-			// bounds are absolute; convert them to centre-relative for the rotated local point
 			val halfWidth = t.bounds.width() / 2f + HIT_PAD
-			val top = t.bounds.top - t.y - HIT_PAD
-			val bottom = t.bounds.bottom - t.y + HIT_PAD
-			if (local[0] >= -halfWidth && local[0] <= halfWidth && local[1] >= top && local[1] <= bottom) {
+			val halfHeight = t.bounds.height() / 2f + HIT_PAD
+			if (local[0] >= -halfWidth && local[0] <= halfWidth && local[1] >= -halfHeight && local[1] <= halfHeight) {
 				return t
 			}
 		}
@@ -998,47 +1031,111 @@ class CropDrawView @JvmOverloads constructor(
 		return Math.toDegrees(Math.atan2((image.y - t.y).toDouble(), (image.x - t.x).toDouble())).toFloat()
 	}
 
+	/** Distance from the object centre to a view point, in image units. */
+	private fun distTo(t: TextObject, vx: Float, vy: Float): Float {
+		val image = toImage(vx, vy)
+		val dx = image.x - t.x
+		val dy = image.y - t.y
+		return Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+	}
+
+	private fun localToView(t: TextObject, lx: Float, ly: Float): PointF {
+		val rad = Math.toRadians(t.rotationDeg.toDouble())
+		val cos = Math.cos(rad).toFloat()
+		val sin = Math.sin(rad).toFloat()
+		val ix = t.x + (lx * cos - ly * sin)
+		val iy = t.y + (lx * sin + ly * cos)
+		val pts = floatArrayOf(ix, iy)
+		viewMatrix.mapPoints(pts)
+		return PointF(pts[0], pts[1])
+	}
+
 	/** Centre of the rotate handle for a selected object, in view coordinates. */
 	private fun rotateHandleViewPos(t: TextObject): PointF {
 		t.measure(textPaint)
-		val corner = floatArrayOf(t.bounds.right, t.bounds.top)
-		viewMatrix.mapPoints(corner)
-		return PointF(corner[0], corner[1])
+		val hw = t.bounds.width() / 2f + 16f
+		val hh = t.bounds.height() / 2f + 12f
+		return localToView(t, hw, -hh)
 	}
 
 	/** Centre of the delete handle for a selected object, in view coordinates. */
 	private fun deleteHandleViewPos(t: TextObject): PointF {
 		t.measure(textPaint)
-		val corner = floatArrayOf(t.bounds.left, t.bounds.top)
-		viewMatrix.mapPoints(corner)
-		return PointF(corner[0], corner[1])
+		val hw = t.bounds.width() / 2f + 16f
+		val hh = t.bounds.height() / 2f + 12f
+		return localToView(t, -hw, -hh)
+	}
+
+	/** Centre of the scale handle for a selected object, in view coordinates. */
+	private fun scaleHandleViewPos(t: TextObject): PointF {
+		t.measure(textPaint)
+		val hw = t.bounds.width() / 2f + 16f
+		val hh = t.bounds.height() / 2f + 12f
+		return localToView(t, hw, hh)
 	}
 
 	private fun hitRotateHandle(vx: Float, vy: Float, t: TextObject): Boolean {
 		val p = rotateHandleViewPos(t)
-		return (vx - p.x) * (vx - p.x) + (vy - p.y) * (vy - p.y) <= ROTATE_HANDLE_R * ROTATE_HANDLE_R * 2.5f
+		val r = ROTATE_HANDLE_R * 2.0f
+		return (vx - p.x) * (vx - p.x) + (vy - p.y) * (vy - p.y) <= r * r
 	}
 
 	private fun hitDeleteButton(vx: Float, vy: Float, t: TextObject): Boolean {
 		val p = deleteHandleViewPos(t)
-		return (vx - p.x) * (vx - p.x) + (vy - p.y) * (vy - p.y) <= ROTATE_HANDLE_R * ROTATE_HANDLE_R * 2.5f
+		val r = ROTATE_HANDLE_R * 2.0f
+		return (vx - p.x) * (vx - p.x) + (vy - p.y) * (vy - p.y) <= r * r
+	}
+
+	private fun hitScaleHandle(vx: Float, vy: Float, t: TextObject): Boolean {
+		val p = scaleHandleViewPos(t)
+		val r = ROTATE_HANDLE_R * 2.0f
+		return (vx - p.x) * (vx - p.x) + (vy - p.y) * (vy - p.y) <= r * r
+	}
+
+	private fun isColorDark(color: Int): Boolean {
+		val r = Color.red(color)
+		val g = Color.green(color)
+		val b = Color.blue(color)
+		return (0.299 * r + 0.587 * g + 0.114 * b) < 140
 	}
 
 	/** Renders every caption onto the canvas in image space. */
 	private fun drawTextObjects(canvas: Canvas) {
 		val paint = textPaint
+		val outlinePaint = textOutlinePaint
 		for (t in textObjects) {
 			t.measure(paint)
+			val lines = t.text.split('\n')
+			val lineHeight = paint.fontSpacing
+			val totalHeight = lines.size * lineHeight
+			val metrics = paint.fontMetrics
+
+			val isDark = isColorDark(t.color)
+			val outlineColor = if (isDark) Color.WHITE else Color.BLACK
+			val outlineWidth = (t.size * 0.12f).coerceIn(3f, 16f)
+
+			outlinePaint.typeface = t.typeface
+			outlinePaint.textSize = t.size
+			outlinePaint.color = outlineColor
+			outlinePaint.strokeWidth = outlineWidth
+
 			paint.color = t.color
 			paint.typeface = t.typeface
 			paint.textSize = t.size
+			paint.style = android.graphics.Paint.Style.FILL
+
 			canvas.save()
 			canvas.translate(t.x, t.y)
 			canvas.rotate(t.rotationDeg)
-			paint.getTextBounds(t.text, 0, t.text.length, tmpTextBounds)
-			val width = paint.measureText(t.text)
-			val metrics = paint.fontMetrics
-			canvas.drawText(t.text, -width / 2f, -(metrics.ascent + metrics.descent) / 2f, paint)
+
+			var curY = -totalHeight / 2f + (-metrics.ascent)
+			for (line in lines) {
+				val width = paint.measureText(line)
+				val startX = -width / 2f
+				canvas.drawText(line, startX, curY, outlinePaint)
+				canvas.drawText(line, startX, curY, paint)
+				curY += lineHeight
+			}
 			canvas.restore()
 		}
 	}
@@ -1047,28 +1144,56 @@ class CropDrawView @JvmOverloads constructor(
 	private fun drawTextSelection(canvas: Canvas) {
 		val sel = selectedText ?: return
 		sel.measure(textPaint)
-		val viewBounds = RectF(sel.bounds)
-		viewMatrix.mapRect(viewBounds)
-		canvas.drawRect(viewBounds, rectPaint)
+		val hw = sel.bounds.width() / 2f + 16f
+		val hh = sel.bounds.height() / 2f + 12f
+
+		canvas.save()
+		canvas.concat(viewMatrix)
+		canvas.translate(sel.x, sel.y)
+		canvas.rotate(sel.rotationDeg)
+		val localRect = RectF(-hw, -hh, hw, hh)
+		canvas.drawRoundRect(localRect, 12f, 12f, rectPaint)
+		canvas.restore()
+
+		// Rotate handle (Top-Right)
 		val rot = rotateHandleViewPos(sel)
 		canvas.drawCircle(rot.x, rot.y, ROTATE_HANDLE_R, handlePaint)
 		canvas.drawCircle(rot.x, rot.y, ROTATE_HANDLE_R, rectOuterPaint)
-		val del = deleteHandleViewPos(sel)
-		canvas.drawCircle(del.x, del.y, ROTATE_HANDLE_R, handlePaint)
-		canvas.drawCircle(del.x, del.y, ROTATE_HANDLE_R, rectOuterPaint)
-		// X mark on the delete handle
-		val d = ROTATE_HANDLE_R * 0.45f
-		canvas.drawLine(del.x - d, del.y - d, del.x + d, del.y + d, rectOuterPaint)
-		canvas.drawLine(del.x - d, del.y + d, del.x + d, del.y - d, rectOuterPaint)
-		// arrows hint on the rotate handle
-		val rr = ROTATE_HANDLE_R * 0.4f
+		val rr = ROTATE_HANDLE_R * 0.45f
 		canvas.drawArc(
 			RectF(rot.x - rr, rot.y - rr, rot.x + rr, rot.y + rr),
 			-60f, 280f, false, rectOuterPaint,
 		)
+
+		// Delete handle (Top-Left)
+		val del = deleteHandleViewPos(sel)
+		canvas.drawCircle(del.x, del.y, ROTATE_HANDLE_R, handlePaint)
+		canvas.drawCircle(del.x, del.y, ROTATE_HANDLE_R, rectOuterPaint)
+		val d = ROTATE_HANDLE_R * 0.4f
+		canvas.drawLine(del.x - d, del.y - d, del.x + d, del.y + d, rectOuterPaint)
+		canvas.drawLine(del.x - d, del.y + d, del.x + d, del.y - d, rectOuterPaint)
+
+		// Scale handle (Bottom-Right)
+		val sc = scaleHandleViewPos(sel)
+		canvas.drawCircle(sc.x, sc.y, ROTATE_HANDLE_R, handlePaint)
+		canvas.drawCircle(sc.x, sc.y, ROTATE_HANDLE_R, rectOuterPaint)
+		val sd = ROTATE_HANDLE_R * 0.4f
+		canvas.drawLine(sc.x - sd, sc.y - sd, sc.x + sd, sc.y + sd, rectOuterPaint)
+		canvas.drawLine(sc.x + sd, sc.y + sd, sc.x + sd - 8f, sc.y + sd, rectOuterPaint)
+		canvas.drawLine(sc.x + sd, sc.y + sd, sc.x + sd, sc.y + sd - 8f, rectOuterPaint)
 	}
 
-	private val textPaint = android.text.TextPaint(android.text.TextPaint.ANTI_ALIAS_FLAG)
+	private val textPaint = android.text.TextPaint(
+		android.text.TextPaint.ANTI_ALIAS_FLAG or android.text.TextPaint.SUBPIXEL_TEXT_FLAG
+	)
+
+	private val textOutlinePaint = android.text.TextPaint(
+		android.text.TextPaint.ANTI_ALIAS_FLAG or android.text.TextPaint.SUBPIXEL_TEXT_FLAG
+	).apply {
+		style = android.graphics.Paint.Style.STROKE
+		strokeJoin = android.graphics.Paint.Join.ROUND
+		strokeCap = android.graphics.Paint.Cap.ROUND
+	}
 
 	private val tmpTextBounds = Rect()
 
@@ -1088,7 +1213,7 @@ class CropDrawView @JvmOverloads constructor(
 	private companion object {
 		const val MIN_CROP = 64f
 		const val MAX_ZOOM = 8f
-		const val ROTATE_HANDLE_R = 22f
+		const val ROTATE_HANDLE_R = 28f
 		const val HIT_PAD = 20f
 	}
 }

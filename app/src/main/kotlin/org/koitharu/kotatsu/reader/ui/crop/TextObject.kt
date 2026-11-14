@@ -24,14 +24,19 @@ class TextObject(
 	fun measure(paint: android.text.TextPaint) {
 		paint.typeface = typeface
 		paint.textSize = size
-		val width = paint.measureText(text)
-		val metrics = paint.fontMetrics
-		val ascent = metrics.ascent
-		val descent = metrics.descent
-		bounds.set(x - width / 2f, y + ascent / 2f, x + width / 2f, y + descent / 2f)
+		val lines = text.split('\n')
+		val maxLineWidth = lines.maxOfOrNull { paint.measureText(it) }?.coerceAtLeast(20f) ?: paint.measureText(text).coerceAtLeast(20f)
+		val lineHeight = paint.fontSpacing
+		val totalHeight = (lines.size * lineHeight).coerceAtLeast(paint.textSize)
+		bounds.set(
+			x - maxLineWidth / 2f,
+			y - totalHeight / 2f,
+			x + maxLineWidth / 2f,
+			y + totalHeight / 2f,
+		)
 	}
 
-	/** Maps a point from image space into the object's local (un-rotated) space. */
+	/** Maps a point from image space into the object's local (un-rotated) space around (x, y). */
 	fun toLocal(px: Float, py: Float): FloatArray {
 		val dx = px - x
 		val dy = py - y

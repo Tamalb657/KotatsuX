@@ -493,7 +493,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 					val tf = fontFiles[pos]
 					if (edit == null) {
 						val bmp = cropView.bitmap
-						val size = ((bmp?.height ?: 1000) / 14f).coerceAtLeast(24f)
+						val size = ((bmp?.height ?: 1000) / 25f).coerceIn(32f, 96f)
 						val obj = TextObject(
 							text = text,
 							fontName = fontNames[pos],
@@ -509,6 +509,7 @@ class PageCropActivity : AppCompatActivity(), View.OnClickListener {
 						edit.text = text
 						edit.fontName = fontNames[pos]
 						edit.typeface = tf
+						edit.color = cropView.strokeColor
 					}
 					lastFontIndex = pos
 					cropView.invalidate()
