@@ -21,12 +21,18 @@ import org.koitharu.kotatsu.core.nav.router
 import org.koitharu.kotatsu.core.os.AppShortcutManager
 import org.koitharu.kotatsu.core.ui.dialog.buildAlertDialog
 import org.koitharu.kotatsu.core.util.ext.isHttpUrl
+import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
+import org.koitharu.kotatsu.local.data.LocalStorageManager
+import org.koitharu.kotatsu.local.domain.MoveLocalMangaUseCase
+import org.koitharu.kotatsu.parsers.model.Manga
 
 class DetailsMenuProvider(
 	private val activity: FragmentActivity,
 	private val viewModel: DetailsViewModel,
 	private val snackbarHost: View,
 	private val appShortcutManager: AppShortcutManager,
+	private val moveLocalMangaUseCase: MoveLocalMangaUseCase,
+	private val localStorageManager: LocalStorageManager,
 ) : MenuProvider, ActivityResultCallback<ActivityResult> {
 
 	private val activityForResultLauncher = activity.registerForActivityResult(
@@ -46,6 +52,8 @@ class DetailsMenuProvider(
 		menu.findItem(R.id.action_share).isVisible = manga != null && AppRouter.isShareSupported(manga)
 		menu.findItem(R.id.action_save).isVisible = manga?.source != null && manga.source != LocalMangaSource
 		menu.findItem(R.id.action_delete).isVisible = manga?.source == LocalMangaSource
+		menu.findItem(R.id.action_move).isVisible = manga?.source == LocalMangaSource
+		menu.findItem(R.id.action_copy).isVisible = manga?.source == LocalMangaSource
 		menu.findItem(R.id.action_browser).isVisible = manga?.publicUrl?.isHttpUrl() == true
 		menu.findItem(R.id.action_alternatives).isVisible = manga?.source != LocalMangaSource
 		menu.findItem(R.id.action_replace_source).isVisible = manga?.source != LocalMangaSource
@@ -69,6 +77,10 @@ class DetailsMenuProvider(
 					setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteLocal() }
 					setNegativeButton(android.R.string.cancel, null)
 				}.show()
+			}
+
+			R.id.action_move, R.id.action_copy -> {
+				showStoragePicker(manga, menuItem.itemId == R.id.action_move)
 			}
 
 			R.id.action_save -> {
@@ -125,6 +137,32 @@ class DetailsMenuProvider(
 	override fun onActivityResult(result: ActivityResult) {
 		if (result.resultCode == Activity.RESULT_OK) {
 			viewModel.reload()
+		}
+	}
+
+	/** Lets the user pick one of the configured download storages as the destination. */
+	private fun showStoragePicker(manga: Manga, isMove: Boolean) {
+		activity.lifecycleScope.launch {
+			val targets = runCatching { moveLocalMangaUseCase.getTargets(manga) }
+				.onFailure { it.printStackTraceDebug() }
+				.getOrDefault(emptyList())
+			if (targets.isEmpty()) {
+				Snackbar.make(
+					snackbarHost,
+					R.string.operation_not_supported,
+					Snackbar.LENGTH_SHORT,
+				).show()
+				return@launch
+			}
+			val names = targets.map { localStorageManager.getDirectoryDisplayName(it, isFullPath = true) }
+			buildAlertDialog(activity) {
+				setTitle(if (isMove) R.string.move_to else R.string.copy_to)
+				setMessage(activity.getString(R.string.move_or_copy_pick))
+				setItems(names.toTypedArray()) { _, which ->
+					viewModel.moveLocal(targets[which], isMove)
+				}
+				setNegativeButton(android.R.string.cancel, null)
+			}.show()
 		}
 	}
 }

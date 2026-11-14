@@ -70,6 +70,11 @@
     <string name="text_hint">Type the caption…</string>
     <string name="gallery">Gallery</string>
     <string name="gallery_empty">Nothing here yet.\nImages you save from the reader or editor will show up here.</string>
+    <string name="move_to">Move to…</string>
+    <string name="copy_to">Copy to…</string>
+    <string name="move_or_copy_pick">Pick a destination among the storages configured for downloads</string>
+    <string name="move_done">Moved to %s</string>
+    <string name="copy_done">Copied to %s</string>
     <string name="reset_crop">Reset crop</string>
     <string name="redo">Redo</string>
     <string name="image_editor">Image editor</string>

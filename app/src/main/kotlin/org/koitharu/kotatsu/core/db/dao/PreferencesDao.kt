@@ -23,4 +23,7 @@ abstract class PreferencesDao {
 
 	@Upsert
 	abstract suspend fun upsert(pref: MangaPrefsEntity)
+
+	@Query("DELETE FROM preferences WHERE manga_id = :mangaId")
+	abstract suspend fun delete(mangaId: Long)
 }

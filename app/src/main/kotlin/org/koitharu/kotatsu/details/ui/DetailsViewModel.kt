@@ -28,6 +28,7 @@ import org.koitharu.kotatsu.core.prefs.AppSettings
 import org.koitharu.kotatsu.core.prefs.ListMode
 import org.koitharu.kotatsu.core.prefs.TriStateOption
 import org.koitharu.kotatsu.core.ui.util.ReversibleAction
+import org.koitharu.kotatsu.core.util.ext.MutableEventFlow
 import org.koitharu.kotatsu.core.util.ext.call
 import org.koitharu.kotatsu.core.util.ext.computeSize
 import org.koitharu.kotatsu.details.data.MangaDetails
@@ -47,7 +48,9 @@ import org.koitharu.kotatsu.list.domain.MangaListMapper
 import org.koitharu.kotatsu.list.ui.model.MangaListModel
 import org.koitharu.kotatsu.local.data.LocalStorageChanges
 import org.koitharu.kotatsu.local.domain.DeleteLocalMangaUseCase
+import org.koitharu.kotatsu.local.domain.MoveLocalMangaUseCase
 import org.koitharu.kotatsu.local.domain.model.LocalManga
+import java.io.File
 import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.util.findById
 import org.koitharu.kotatsu.parsers.util.runCatchingCancellable
@@ -69,6 +72,7 @@ class DetailsViewModel @Inject constructor(
 	interactor: DetailsInteractor,
 	savedStateHandle: SavedStateHandle,
 	deleteLocalMangaUseCase: DeleteLocalMangaUseCase,
+	private val moveLocalMangaUseCase: MoveLocalMangaUseCase,
 	private val relatedMangaUseCase: RelatedMangaUseCase,
 	private val mangaListMapper: MangaListMapper,
 	private val detailsLoadUseCase: DetailsLoadUseCase,
@@ -109,6 +113,7 @@ class DetailsViewModel @Inject constructor(
 		.stateIn(viewModelScope + Dispatchers.Default, SharingStarted.Eagerly, false)
 
 	val remoteManga = MutableStateFlow<Manga?>(null)
+	val onMangaMoved = MutableEventFlow<Pair<File, Boolean>>()
 
 	val historyInfo: StateFlow<HistoryInfo> = combine(
 		mangaDetails,
@@ -235,6 +240,14 @@ class DetailsViewModel @Inject constructor(
 		loadingJob = doLoad(force = true)
 		loadedRelated = null
 		relatedRefresh.value++
+	}
+
+	fun moveLocal(targetDir: File, isMove: Boolean) {
+		val m = mangaDetails.value?.local?.manga ?: getMangaOrNull() ?: return
+		launchLoadingJob(Dispatchers.Default) {
+			moveLocalMangaUseCase(m, targetDir, deleteSource = isMove)
+			onMangaMoved.call(targetDir to isMove)
+		}
 	}
 
 	fun updateScrobbling(index: Int, rating: Float, status: ScrobblingStatus?) {

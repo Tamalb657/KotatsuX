@@ -54,7 +54,7 @@ class PdfMangaParser(private val file: File) {
 			chapters = if (withDetails && count != null && count > 0) {
 				listOf(
 					MangaChapter(
-						id = file.absolutePath.longHashCode(),
+						id = "0:all_pages".longHashCode(),
 						title = "All pages",
 						number = 1f,
 						volume = 0,

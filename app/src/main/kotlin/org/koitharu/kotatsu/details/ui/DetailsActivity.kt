@@ -58,6 +58,8 @@ import org.koitharu.kotatsu.core.model.titleResId
 import org.koitharu.kotatsu.core.nav.ReaderIntent
 import org.koitharu.kotatsu.core.nav.router
 import org.koitharu.kotatsu.core.os.AppShortcutManager
+import org.koitharu.kotatsu.local.data.LocalStorageManager
+import org.koitharu.kotatsu.local.domain.MoveLocalMangaUseCase
 import org.koitharu.kotatsu.core.parser.favicon.faviconUri
 import org.koitharu.kotatsu.core.prefs.AppSettings
 import org.koitharu.kotatsu.core.ui.BaseActivity
@@ -126,6 +128,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 import org.koitharu.kotatsu.sourcescore.data.RatingResponse
+import java.io.File
 import java.util.Locale
 
 @AndroidEntryPoint
@@ -148,6 +151,12 @@ class DetailsActivity :
 
 	@Inject
 	lateinit var shortcutManager: AppShortcutManager
+
+	@Inject
+	lateinit var moveLocalMangaUseCase: MoveLocalMangaUseCase
+
+	@Inject
+	lateinit var localStorageManager: LocalStorageManager
 
 	@Inject
 	lateinit var coil: ImageLoader
@@ -231,8 +240,25 @@ class DetailsActivity :
 			viewModel = viewModel,
 			snackbarHost = viewBinding.scrollView,
 			appShortcutManager = shortcutManager,
+			moveLocalMangaUseCase = moveLocalMangaUseCase,
+			localStorageManager = localStorageManager,
 		)
 		addMenuProvider(menuProvider)
+		viewModel.onMangaMoved.observeEvent(this) { event: Pair<File, Boolean> ->
+			val (targetDir, isMove) = event
+			val targetName = localStorageManager.getDirectoryDisplayName(targetDir, isFullPath = true)
+			val msg = if (isMove) {
+				getString(R.string.move_done, targetName)
+			} else {
+				getString(R.string.copy_done, targetName)
+			}
+			Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+			if (isMove) {
+				finishAfterTransition()
+			} else {
+				viewModel.reload()
+			}
+		}
 	}
 
 	override fun onProvideAssistContent(outContent: AssistContent) {
