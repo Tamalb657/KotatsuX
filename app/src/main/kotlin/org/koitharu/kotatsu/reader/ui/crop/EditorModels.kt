@@ -3,6 +3,10 @@ package org.koitharu.kotatsu.reader.ui.crop
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -84,17 +88,64 @@ data class PerspectiveTextLayer(
 	fun deepCopy(): PerspectiveTextLayer = copy(pts = ArrayList(pts))
 }
 
-data class MangaFontPreset(
+class MangaFontPreset(
 	val id: String,
 	val name: String,
 	val role: String,
-	val typeface: Typeface,
+	private val typefaceLoader: () -> Typeface,
+	private val offlineCheck: () -> Boolean = { true },
+	val remoteUrl: String? = null,
+	val cacheFileName: String? = null,
+	val forceBoldStyle: Boolean = false,
 	val isBoldWeight: Boolean,
 	val uppercase: Boolean,
 	val letterSpacingPx: Float,
 	val isCustom: Boolean = false,
 	val customFilePath: String? = null,
-)
+) {
+	@Volatile
+	private var cachedOfflineTypeface: Typeface? = null
+
+	val isAvailableOffline: Boolean
+		get() = cachedOfflineTypeface != null || offlineCheck()
+
+	val typeface: Typeface
+		get() {
+			cachedOfflineTypeface?.let { return it }
+			val loaded = typefaceLoader()
+			if (offlineCheck()) {
+				cachedOfflineTypeface = loaded
+			}
+			return loaded
+		}
+
+	internal fun updateDownloadedTypeface(tf: Typeface) {
+		cachedOfflineTypeface = tf
+	}
+
+	constructor(
+		id: String,
+		name: String,
+		role: String,
+		typeface: Typeface,
+		isBoldWeight: Boolean,
+		uppercase: Boolean,
+		letterSpacingPx: Float,
+		isCustom: Boolean = false,
+		customFilePath: String? = null,
+	) : this(
+		id = id,
+		name = name,
+		role = role,
+		typefaceLoader = { typeface },
+		offlineCheck = { true },
+		isBoldWeight = isBoldWeight,
+		uppercase = uppercase,
+		letterSpacingPx = letterSpacingPx,
+		isCustom = isCustom,
+		customFilePath = customFilePath,
+	)
+}
 
 data class EditorDocumentState(
 	var rotationSteps: Int = 0,
@@ -195,83 +246,196 @@ object EditorColors {
 
 object MangaFontRegistry {
 
-	private fun loadAssetFont(context: Context, fileName: String, fallback: Typeface): Typeface =
-		runCatching { Typeface.createFromAsset(context.assets, "fonts/$fileName") }.getOrDefault(fallback)
+	private const val GF_BASE = "https://raw.githubusercontent.com/google/fonts/main/"
+	private const val DOWNLOADED_DIR = "downloaded_fonts"
 
-	fun createBuiltInPresets(context: Context): List<MangaFontPreset> = listOf(
-		MangaFontPreset(
-			id = "wild",
-			name = "Wild Words",
-			role = "Manga Dialogue",
-			typeface = loadAssetFont(context, "ComicNeue-Bold.ttf", Typeface.DEFAULT_BOLD),
-			isBoldWeight = true,
-			uppercase = true,
-			letterSpacingPx = 1.5f,
-		),
-		MangaFontPreset(
-			id = "anime",
-			name = "Anime Ace",
-			role = "Webtoon Speech",
-			typeface = loadAssetFont(context, "ArchitectsDaughter-Regular.ttf", Typeface.DEFAULT),
-			isBoldWeight = false,
-			uppercase = true,
-			letterSpacingPx = 2.0f,
-		),
-		MangaFontPreset(
-			id = "shonen",
-			name = "Shonen SFX",
-			role = "Action Impact",
-			typeface = loadAssetFont(context, "Bangers-Regular.ttf", Typeface.DEFAULT_BOLD),
-			isBoldWeight = false,
-			uppercase = true,
-			letterSpacingPx = 3.0f,
-		),
-		MangaFontPreset(
-			id = "brush",
-			name = "Brush Shout",
-			role = "Battle Scream",
-			typeface = loadAssetFont(context, "PermanentMarker-Regular.ttf", Typeface.DEFAULT),
-			isBoldWeight = false,
-			uppercase = false,
-			letterSpacingPx = 1.0f,
-		),
-		MangaFontPreset(
-			id = "komika",
-			name = "Komika Axis",
-			role = "Bold Cover",
-			typeface = loadAssetFont(context, "LuckiestGuy-Regular.ttf", Typeface.DEFAULT_BOLD),
-			isBoldWeight = false,
-			uppercase = true,
-			letterSpacingPx = 2.0f,
-		),
-		MangaFontPreset(
-			id = "chibi",
-			name = "Chibi Round",
-			role = "Comedy / Gag",
-			typeface = Typeface.create(loadAssetFont(context, "Fredoka-Bold.ttf", Typeface.DEFAULT_BOLD), Typeface.BOLD),
-			isBoldWeight = true,
-			uppercase = false,
-			letterSpacingPx = 0.5f,
-		),
-		MangaFontPreset(
-			id = "horror",
-			name = "Thriller SFX",
-			role = "Dark / Dread",
-			typeface = loadAssetFont(context, "Creepster-Regular.ttf", Typeface.DEFAULT),
-			isBoldWeight = false,
-			uppercase = true,
-			letterSpacingPx = 2.5f,
-		),
-		MangaFontPreset(
-			id = "system",
-			name = "Manhwa Sans",
-			role = "System UI Box",
-			typeface = Typeface.create(loadAssetFont(context, "PlusJakartaSans-ExtraBold.ttf", Typeface.SANS_SERIF), Typeface.BOLD),
-			isBoldWeight = true,
-			uppercase = false,
-			letterSpacingPx = 0.4f,
-		),
+	private val typefaceCache = ConcurrentHashMap<String, Typeface>()
+
+	private fun getDownloadedFile(appContext: Context, fileName: String): File =
+		File(File(appContext.filesDir, DOWNLOADED_DIR), fileName)
+
+	private fun isBundledOrCached(appContext: Context, spec: BuiltInSpec): Boolean {
+		if (spec.remoteUrl == null) return true
+		val f = getDownloadedFile(appContext, spec.fileName)
+		return f.isFile && f.length() > 256L
+	}
+
+	private fun loadResolvedFont(
+		appContext: Context,
+		spec: BuiltInSpec,
+		fallback: Typeface,
+	): Typeface {
+		val key = if (spec.forceBoldStyle) "${spec.fileName}#bold" else spec.fileName
+		typefaceCache[key]?.let { return it }
+
+		if (spec.remoteUrl == null) {
+			val base = runCatching { Typeface.createFromAsset(appContext.assets, "fonts/${spec.fileName}") }
+				.getOrDefault(fallback)
+			val resolved = if (spec.forceBoldStyle) Typeface.create(base, Typeface.BOLD) else base
+			typefaceCache[key] = resolved
+			return resolved
+		}
+
+		val cachedFile = getDownloadedFile(appContext, spec.fileName)
+		if (cachedFile.isFile && cachedFile.length() > 256L) {
+			val base = runCatching { Typeface.createFromFile(cachedFile) }.getOrNull()
+			if (base != null) {
+				val resolved = if (spec.forceBoldStyle) Typeface.create(base, Typeface.BOLD) else base
+				typefaceCache[key] = resolved
+				return resolved
+			}
+		}
+
+		return fallback
+	}
+
+	fun downloadFontIfNeeded(context: Context, preset: MangaFontPreset): Boolean {
+		if (preset.isAvailableOffline) return true
+		val urlStr = preset.remoteUrl ?: return false
+		val fileName = preset.cacheFileName ?: return false
+		val appCtx = context.applicationContext
+		val dir = File(appCtx.filesDir, DOWNLOADED_DIR).apply { mkdirs() }
+		val finalFile = File(dir, fileName)
+		val tmpFile = File(dir, "$fileName.tmp_${System.currentTimeMillis()}")
+
+		return runCatching {
+			val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+				connectTimeout = 15_000
+				readTimeout = 30_000
+				instanceFollowRedirects = true
+				setRequestProperty("User-Agent", "KotatsuX-Android")
+			}
+			try {
+				if (conn.responseCode !in 200..299) {
+					error("HTTP ${conn.responseCode}")
+				}
+				conn.inputStream.use { input ->
+					tmpFile.outputStream().use { out ->
+						input.copyTo(out)
+					}
+				}
+			} finally {
+				conn.disconnect()
+			}
+
+			val baseTf = Typeface.createFromFile(tmpFile)
+			if (finalFile.exists()) finalFile.delete()
+			if (!tmpFile.renameTo(finalFile)) {
+				tmpFile.copyTo(finalFile, overwrite = true)
+				tmpFile.delete()
+			}
+			val loadedFromFinal = Typeface.createFromFile(finalFile) ?: baseTf
+			val resolved = if (preset.forceBoldStyle) Typeface.create(loadedFromFinal, Typeface.BOLD) else loadedFromFinal
+			val key = if (preset.forceBoldStyle) "$fileName#bold" else fileName
+			typefaceCache[key] = resolved
+			preset.updateDownloadedTypeface(resolved)
+			true
+		}.onFailure {
+			runCatching { tmpFile.delete() }
+		}.getOrDefault(false)
+	}
+
+	private data class BuiltInSpec(
+		val id: String,
+		val name: String,
+		val fileName: String,
+		val role: String = "Comic & Multilingual",
+		val isBoldWeight: Boolean = false,
+		val uppercase: Boolean = false,
+		val letterSpacingPx: Float = 0.6f,
+		val forceBoldStyle: Boolean = false,
+		val remoteUrl: String? = null,
 	)
+
+	private val BUILT_IN_SPECS = listOf(
+		// Exact 59 fonts requested by user (in order): 14 compact specialty comic fonts bundled offline + 51 on-demand CDN fonts
+		BuiltInSpec("notosans", "NotoSans", "NotoSans.ttf", "Clean Sans", remoteUrl = GF_BASE + "ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf"),
+		BuiltInSpec("wild", "WildWords", "WildWords.otf", "Manga Dialogue", isBoldWeight = false, uppercase = true, letterSpacingPx = 1.0f),
+		BuiltInSpec("heroika", "Heroika", "Heroika.otf", "Comic Dialogue", uppercase = true, letterSpacingPx = 0.8f),
+		BuiltInSpec("shonen", "Shonen", "Shonen.otf", "Shonen Action", uppercase = true, letterSpacingPx = 1.0f),
+		BuiltInSpec("badcomic", "BadComic", "BadComic.ttf", "Indie Comic"),
+		BuiltInSpec("mashanzheng", "MaShanZheng", "MaShanZheng.ttf", "Brush CJK", remoteUrl = GF_BASE + "ofl/mashanzheng/MaShanZheng-Regular.ttf"),
+		BuiltInSpec("komikajam", "KomikaJam", "KomikaJam.ttf", "Comic SFX", uppercase = true, letterSpacingPx = 0.8f),
+		BuiltInSpec("bangers", "Bangers", "Bangers.ttf", "Action Impact", uppercase = true, letterSpacingPx = 1.6f),
+		BuiltInSpec("edo", "Edo", "Edo.ttf", "Brush Shout", uppercase = true, letterSpacingPx = 1.0f),
+		BuiltInSpec("ridibatang", "RIDIBatang", "RIDIBatang.otf", "Serif Novel"),
+		BuiltInSpec("bushidoo", "Bushidoo", "Bushidoo.ttf", "Samurai SFX", uppercase = true, letterSpacingPx = 1.2f),
+		BuiltInSpec("itim", "Itim", "Itim.ttf", "Casual Handwritten", remoteUrl = GF_BASE + "ofl/itim/Itim-Regular.ttf"),
+		BuiltInSpec("mogulirina", "Mogul Irina", "MogulIrina.ttf", "Comic Script", uppercase = true, letterSpacingPx = 0.8f),
+		BuiltInSpec("kalam", "Kalam", "Kalam.ttf", "Handwritten", remoteUrl = GF_BASE + "ofl/kalam/Kalam-Bold.ttf"),
+		BuiltInSpec("hindsiliguri", "HindSiliguri", "HindSiliguri.ttf", "Bangla & Latin", remoteUrl = GF_BASE + "ofl/hindsiliguri/HindSiliguri-Bold.ttf"),
+		BuiltInSpec("shantellsans", "ShantellSans", "ShantellSans.ttf", "Expressive Sans", remoteUrl = GF_BASE + "ofl/shantellsans/ShantellSans%5BBNCE%2CINFM%2CSPAC%2Cwght%5D.ttf"),
+		BuiltInSpec("shantellsansinformal", "ShantellSansInformal", "ShantellSansInformal.ttf", "Informal Comic", remoteUrl = GF_BASE + "ofl/shantellsans/ShantellSans%5BBNCE%2CINFM%2CSPAC%2Cwght%5D.ttf"),
+		BuiltInSpec("vazirmatn", "Vazirmatn", "Vazirmatn.ttf", "Arabic & Latin", remoteUrl = GF_BASE + "ofl/vazirmatn/Vazirmatn%5Bwght%5D.ttf"),
+		BuiltInSpec("pretendard", "Pretendard", "Pretendard.otf", "Manhwa UI Sans", remoteUrl = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-SemiBold.otf"),
+		BuiltInSpec("zenmarugothic", "ZenMaruGothic", "ZenMaruGothic.ttf", "Rounded Gothic", remoteUrl = GF_BASE + "ofl/zenmarugothic/ZenMaruGothic-Bold.ttf"),
+		BuiltInSpec("chillround", "ChillRound", "ChillRound.otf", "Rounded CJK"),
+		BuiltInSpec("cairo", "Cairo", "Cairo.ttf", "Geometric Sans", remoteUrl = GF_BASE + "ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf"),
+		BuiltInSpec("pangolin", "Pangolin", "Pangolin.ttf", "Cartoon Speech", remoteUrl = GF_BASE + "ofl/pangolin/Pangolin-Regular.ttf"),
+		BuiltInSpec("mansalva", "Mansalva", "Mansalva.ttf", "Marker Script", remoteUrl = GF_BASE + "ofl/mansalva/Mansalva-Regular.ttf"),
+		BuiltInSpec("patrickhand", "PatrickHand", "PatrickHand.ttf", "Hand Lettering", remoteUrl = GF_BASE + "ofl/patrickhand/PatrickHand-Regular.ttf"),
+		BuiltInSpec("poetsenone", "PoetsenOne", "PoetsenOne.ttf", "Bold Display", remoteUrl = GF_BASE + "ofl/poetsenone/PoetsenOne-Regular.ttf"),
+		BuiltInSpec("balsamiqsans", "BalsamiqSans", "BalsamiqSans.ttf", "Playful Dialogue", remoteUrl = GF_BASE + "ofl/balsamiqsans/BalsamiqSans-Bold.ttf"),
+		BuiltInSpec("lilitaone", "LilitaOne", "LilitaOne.ttf", "Heavy Title", remoteUrl = GF_BASE + "ofl/lilitaone/LilitaOne-Regular.ttf"),
+		BuiltInSpec("estedad", "Estedad", "Estedad.ttf", "Modern Sans", remoteUrl = GF_BASE + "ofl/estedad/Estedad%5Bwght%5D.ttf"),
+		BuiltInSpec("marhey", "Marhey", "Marhey.ttf", "Playful Display", remoteUrl = GF_BASE + "ofl/marhey/Marhey%5Bwght%5D.ttf"),
+		BuiltInSpec("gveretlevin", "GveretLevin", "GveretLevin.ttf", "Handwritten Script", remoteUrl = GF_BASE + "ofl/gveretlevin/GveretLevin-Regular.ttf"),
+		BuiltInSpec("kodchasan", "Kodchasan", "Kodchasan.ttf", "Rounded Thai & Latin", remoteUrl = GF_BASE + "ofl/kodchasan/Kodchasan-Bold.ttf"),
+		BuiltInSpec("poorstory", "PoorStory", "PoorStory.ttf", "Storybook Hangul", remoteUrl = GF_BASE + "ofl/poorstory/PoorStory-Regular.ttf"),
+		BuiltInSpec("nanumpenscript", "NanumPenScript", "NanumPenScript.ttf", "Pen Script", remoteUrl = GF_BASE + "ofl/nanumpenscript/NanumPenScript-Regular.ttf"),
+		BuiltInSpec("zcoolkuaile", "ZCOOLKuaiLe", "ZCOOLKuaiLe.ttf", "Happy CJK", remoteUrl = GF_BASE + "ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf"),
+		BuiltInSpec("chilanka", "Chilanka", "Chilanka.ttf", "Light Handwritten", remoteUrl = GF_BASE + "ofl/chilanka/Chilanka-Regular.ttf"),
+		BuiltInSpec("agbalumo", "Agbalumo", "Agbalumo.ttf", "Poster Display", remoteUrl = GF_BASE + "ofl/agbalumo/Agbalumo-Regular.ttf"),
+		BuiltInSpec("atma", "Atma", "Atma.ttf", "Bangla Comic", remoteUrl = GF_BASE + "ofl/atma/Atma-Bold.ttf"),
+		BuiltInSpec("koulen", "Koulen", "Koulen.ttf", "Condensed Impact", uppercase = true, letterSpacingPx = 1.0f, remoteUrl = GF_BASE + "ofl/koulen/Koulen-Regular.ttf"),
+		BuiltInSpec("yatraone", "YatraOne", "YatraOne.ttf", "Devanagari Display", remoteUrl = GF_BASE + "ofl/yatraone/YatraOne-Regular.ttf"),
+		BuiltInSpec("akayakanadaka", "AkayaKanadaka", "AkayaKanadaka.ttf", "Comic Kannada", remoteUrl = GF_BASE + "ofl/akayakanadaka/AkayaKanadaka-Regular.ttf"),
+		BuiltInSpec("mogra", "Mogra", "Mogra.ttf", "Bold Groovy", remoteUrl = GF_BASE + "ofl/mogra/Mogra-Regular.ttf"),
+		BuiltInSpec("anekodia", "AnekOdia", "AnekOdia.ttf", "Odia & Latin", remoteUrl = GF_BASE + "ofl/anekodia/AnekOdia%5Bwdth%2Cwght%5D.ttf"),
+		BuiltInSpec("langar", "Langar", "Langar.ttf", "Gurmukhi Display", remoteUrl = GF_BASE + "ofl/langar/Langar-Regular.ttf"),
+		BuiltInSpec("kavivanar", "Kavivanar", "Kavivanar.ttf", "Slanted Script", remoteUrl = GF_BASE + "ofl/kavivanar/Kavivanar-Regular.ttf"),
+		BuiltInSpec("akayatelivigala", "AkayaTelivigala", "AkayaTelivigala.ttf", "Telugu Comic", remoteUrl = GF_BASE + "ofl/akayatelivigala/AkayaTelivigala-Regular.ttf"),
+		BuiltInSpec("yaldevi", "Yaldevi", "Yaldevi.ttf", "Sinhala & Latin", remoteUrl = GF_BASE + "ofl/yaldevicolombo/YaldeviColombo-Bold.ttf"),
+		BuiltInSpec("anekmalayalam", "AnekMalayalam", "AnekMalayalam.ttf", "Malayalam & Latin", remoteUrl = GF_BASE + "ofl/anekmalayalam/AnekMalayalam%5Bwdth%2Cwght%5D.ttf"),
+		BuiltInSpec("notoserifmyanmar", "NotoSerifMyanmar", "NotoSerifMyanmar.ttf", "Myanmar Serif", remoteUrl = GF_BASE + "ofl/notoserifmyanmar/NotoSerifMyanmar-Bold.ttf"),
+		BuiltInSpec("phetsarath", "Phetsarath", "Phetsarath.ttf", "Lao & Latin", remoteUrl = GF_BASE + "ofl/phetsarath/Phetsarath-Bold.ttf"),
+		BuiltInSpec("kantumruypro", "KantumruyPro", "KantumruyPro.ttf", "Khmer & Latin", remoteUrl = GF_BASE + "ofl/kantumruypro/KantumruyPro%5Bwght%5D.ttf"),
+		BuiltInSpec("eeyek", "Eeyek", "Eeyek.ttf", "Meetei Mayek"),
+		BuiltInSpec("gurugomke", "GuruGomke", "GuruGomke.ttf", "Ol Chiki"),
+		BuiltInSpec("montserratarmenian", "MontserratArmenian", "MontserratArmenian.ttf", "Armenian Sans"),
+		BuiltInSpec("firago", "FiraGO", "FiraGO.ttf", "Global Sans", remoteUrl = "https://raw.githubusercontent.com/bBoxType/FiraGO/master/Fonts/FiraGO_TTF_1001/Roman/FiraGO-SemiBold.ttf"),
+		BuiltInSpec("chibi", "Fredoka", "Fredoka.ttf", "Comedy / Gag", isBoldWeight = true, forceBoldStyle = true, remoteUrl = GF_BASE + "ofl/fredoka/Fredoka%5Bwdth%2Cwght%5D.ttf"),
+		BuiltInSpec("abyssinicasil", "AbyssinicaSIL", "AbyssinicaSIL.ttf", "Ethiopic Serif", remoteUrl = GF_BASE + "ofl/abyssinicasil/AbyssinicaSIL-Regular.ttf"),
+		BuiltInSpec("scheherazadenew", "ScheherazadeNew", "ScheherazadeNew.ttf", "Classic Naskh", remoteUrl = GF_BASE + "ofl/scheherazadenew/ScheherazadeNew-Bold.ttf"),
+		BuiltInSpec("iansui", "Iansui", "Iansui.ttf", "Calligraphy CJK", remoteUrl = GF_BASE + "ofl/iansui/Iansui-Regular.ttf"),
+		// Additional comic presets (on-demand)
+		BuiltInSpec("comicneue", "ComicNeue", "ComicNeue-Bold.ttf", "Classic Comic", isBoldWeight = true, remoteUrl = GF_BASE + "ofl/comicneue/ComicNeue-Bold.ttf"),
+		BuiltInSpec("anime", "ArchitectsDaughter", "ArchitectsDaughter-Regular.ttf", "Webtoon Speech", uppercase = true, letterSpacingPx = 1.6f, remoteUrl = GF_BASE + "ofl/architectsdaughter/ArchitectsDaughter-Regular.ttf"),
+		BuiltInSpec("brush", "PermanentMarker", "PermanentMarker-Regular.ttf", "Battle Scream", letterSpacingPx = 1.0f, remoteUrl = GF_BASE + "apache/permanentmarker/PermanentMarker-Regular.ttf"),
+		BuiltInSpec("komika", "LuckiestGuy", "LuckiestGuy-Regular.ttf", "Bold Cover", uppercase = true, letterSpacingPx = 1.6f, remoteUrl = GF_BASE + "apache/luckiestguy/LuckiestGuy-Regular.ttf"),
+		BuiltInSpec("horror", "Creepster", "Creepster-Regular.ttf", "Dark / Dread", uppercase = true, letterSpacingPx = 2.0f, remoteUrl = GF_BASE + "ofl/creepster/Creepster-Regular.ttf"),
+		BuiltInSpec("system", "PlusJakartaSans", "PlusJakartaSans-ExtraBold.ttf", "System UI Box", isBoldWeight = true, forceBoldStyle = true, remoteUrl = GF_BASE + "ofl/plusjakartasans/PlusJakartaSans%5Bwght%5D.ttf"),
+	)
+
+	fun createBuiltInPresets(context: Context): List<MangaFontPreset> {
+		val appCtx = context.applicationContext
+		return BUILT_IN_SPECS.map { spec ->
+			val fallback = if (spec.isBoldWeight) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+			MangaFontPreset(
+				id = spec.id,
+				name = spec.name,
+				role = spec.role,
+				typefaceLoader = { loadResolvedFont(appCtx, spec, fallback) },
+				offlineCheck = { isBundledOrCached(appCtx, spec) },
+				remoteUrl = spec.remoteUrl,
+				cacheFileName = spec.fileName,
+				forceBoldStyle = spec.forceBoldStyle,
+				isBoldWeight = spec.isBoldWeight,
+				uppercase = spec.uppercase,
+				letterSpacingPx = spec.letterSpacingPx,
+			)
+		}
+	}
 }
 
 object HomographyMath {

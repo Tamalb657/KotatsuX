@@ -115,6 +115,7 @@ class PageCropActivity : AppCompatActivity() {
 	private lateinit var customFontNameInput: EditText
 	private lateinit var btnCustomFontCaps: TextView
 	private lateinit var btnCustomFontLoad: TextView
+	private lateinit var fontSearchInput: EditText
 	private lateinit var fontPresetsScroll: ScrollView
 	private lateinit var textFontPresetsContainer: LinearLayout
 	private lateinit var textColorSwatchesRow: LinearLayout
@@ -139,6 +140,8 @@ class PageCropActivity : AppCompatActivity() {
 	private var editingTextId: String? = null
 	private var pendingTextTapPos: NormPt? = null
 	private var isUpdatingInputCase: Boolean = false
+	private var fontSearchQuery: String = ""
+	private val downloadingFontIds = HashSet<String>()
 
 	// Export State
 	private var isExportPng: Boolean = true
@@ -322,6 +325,7 @@ class PageCropActivity : AppCompatActivity() {
 		customFontNameInput = findViewById(R.id.customFontNameInput)
 		btnCustomFontCaps = findViewById(R.id.btnCustomFontCaps)
 		btnCustomFontLoad = findViewById(R.id.btnCustomFontLoad)
+		fontSearchInput = findViewById(R.id.fontSearchInput)
 		fontPresetsScroll = findViewById(R.id.fontPresetsScroll)
 		textFontPresetsContainer = findViewById(R.id.textFontPresetsContainer)
 		textColorSwatchesRow = findViewById(R.id.textColorSwatchesRow)
@@ -399,6 +403,8 @@ class PageCropActivity : AppCompatActivity() {
 		customFontDrawer.background = roundedShape(EditorColors.SURFACE_CONTAINER, 16f)
 		findViewById<View>(R.id.customFontInputBox).background =
 			roundedShape(EditorColors.SURFACE_CONTAINER_LOWEST, 12f)
+		findViewById<View>(R.id.fontSearchBox).background =
+			roundedShape(EditorColors.SURFACE_CONTAINER_LOWEST, 12f, 1f, EditorColors.OUTLINE_VARIANT)
 		btnCustomFontLoad.background = rippleShape(EditorColors.PRIMARY, 8f)
 		findViewById<View>(R.id.btnUploadFontFile).background =
 			rippleShape(EditorColors.SURFACE_CONTAINER_HIGH, 12f)
@@ -607,6 +613,24 @@ class PageCropActivity : AppCompatActivity() {
 				),
 			)
 		}
+
+		@Suppress("ClickableViewAccessibility")
+		fontPresetsScroll.setOnTouchListener { v, _ ->
+			v.parent?.requestDisallowInterceptTouchEvent(true)
+			false
+		}
+
+		fontSearchInput.addTextChangedListener(object : TextWatcher {
+			override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+			override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+			override fun afterTextChanged(s: Editable?) {
+				val nextQuery = s?.toString()?.trim().orEmpty()
+				if (fontSearchQuery != nextQuery) {
+					fontSearchQuery = nextQuery
+					renderTextFontPresetsGrid(scrollToActive = false)
+				}
+			}
+		})
 
 		// Save & Export Modal interactions
 		saveModalOverlay.setOnClickListener { closeSaveModal() }
@@ -1252,8 +1276,12 @@ class PageCropActivity : AppCompatActivity() {
 			}
 		}
 
+		if (fontSearchInput.text?.isNotEmpty() == true) {
+			fontSearchQuery = ""
+			fontSearchInput.setText("")
+		}
 		btnClearTextInput.isVisible = !canvasTextInput.text.isNullOrEmpty()
-		renderTextFontPresetsGrid()
+		renderTextFontPresetsGrid(scrollToActive = true)
 		renderTextColorSwatches()
 		syncTextInputFontPreview()
 
@@ -1333,79 +1361,165 @@ class PageCropActivity : AppCompatActivity() {
 		}
 	}
 
-	private fun renderTextFontPresetsGrid() {
-		textFontPresetsContainer.removeAllViews()
-		val presets = cropView.fontPresets
+	private fun normalizeFontQuery(raw: String): String =
+		raw.lowercase().replace(Regex("[\\s_-]+"), "")
 
-		// Constrain ScrollView height to 184dp when more than 8 presets exist
-		val maxScrollH = (184f * dp).roundToInt()
-		val rowsCount = (presets.size + 1) / 2
-		val estH = rowsCount * (44f * dp).roundToInt()
+	private fun renderTextFontPresetsGrid(scrollToActive: Boolean = false) {
+		textFontPresetsContainer.removeAllViews()
+		val normQuery = normalizeFontQuery(fontSearchQuery)
+		val presets = if (normQuery.isEmpty()) {
+			cropView.fontPresets
+		} else {
+			cropView.fontPresets.filter {
+				normalizeFontQuery(it.name).contains(normQuery) ||
+					normalizeFontQuery(it.role).contains(normQuery)
+			}
+		}
+
+		val maxScrollH = (216f * dp).roundToInt()
+		val rowH = (40f * dp).roundToInt()
+		val estH = max(1, presets.size) * (rowH + (4f * dp).roundToInt())
 		val slp = fontPresetsScroll.layoutParams
 		slp.height = if (estH > maxScrollH) maxScrollH else ViewGroup.LayoutParams.WRAP_CONTENT
 		fontPresetsScroll.layoutParams = slp
 
-		var i = 0
-		while (i < presets.size) {
-			val row = LinearLayout(this).apply {
-				orientation = LinearLayout.HORIZONTAL
+		if (presets.isEmpty()) {
+			val emptyTv = TextView(this).apply {
+				text = "No matching fonts"
+				setTextColor(EditorColors.ON_SURFACE_VARIANT)
+				textSize = 12f
+				gravity = Gravity.CENTER
+				val pad = (14f * dp).roundToInt()
+				setPadding(pad, pad, pad, pad)
 			}
+			textFontPresetsContainer.addView(emptyTv)
+			return
+		}
+
+		var activeRowIndex = -1
+		presets.forEachIndexed { idx, preset ->
+			if (preset.id == activeTextFontId) activeRowIndex = idx
+			val pill = buildFontPresetPill(preset)
 			val rowLp = LinearLayout.LayoutParams(
 				ViewGroup.LayoutParams.MATCH_PARENT,
-				ViewGroup.LayoutParams.WRAP_CONTENT,
+				rowH,
 			).apply {
-				if (i + 2 < presets.size) bottomMargin = (6f * dp).roundToInt()
+				if (idx < presets.lastIndex) bottomMargin = (4f * dp).roundToInt()
 			}
+			textFontPresetsContainer.addView(pill, rowLp)
+		}
 
-			val first = buildFontPresetPill(presets[i])
-			row.addView(first, LinearLayout.LayoutParams(0, (38f * dp).roundToInt(), 1f).apply {
-				marginEnd = (6f * dp).roundToInt()
-			})
-
-			if (i + 1 < presets.size) {
-				val second = buildFontPresetPill(presets[i + 1])
-				row.addView(second, LinearLayout.LayoutParams(0, (38f * dp).roundToInt(), 1f))
-			} else {
-				row.addView(View(this), LinearLayout.LayoutParams(0, (38f * dp).roundToInt(), 1f))
-			}
-
-			textFontPresetsContainer.addView(row, rowLp)
-			i += 2
+		if (scrollToActive && activeRowIndex > 2) {
+			val targetY = max(0, (activeRowIndex - 1) * (rowH + (4f * dp).roundToInt()))
+			fontPresetsScroll.post { fontPresetsScroll.scrollTo(0, targetY) }
 		}
 	}
 
 	private fun buildFontPresetPill(preset: MangaFontPreset): FrameLayout {
 		val active = activeTextFontId == preset.id
+		val isOfflineReady = preset.isAvailableOffline
+		val isDownloading = downloadingFontIds.contains(preset.id)
 		val bgColor = if (active) EditorColors.SECONDARY_CONTAINER else EditorColors.SURFACE_CONTAINER
-		val fgColor = if (active) EditorColors.ON_SECONDARY_CONTAINER else EditorColors.ON_SURFACE_VARIANT
+		val nameColor = if (active) EditorColors.ON_SECONDARY_CONTAINER else EditorColors.ON_SURFACE
+		val previewColor = if (active || isDownloading) EditorColors.PRIMARY else EditorColors.ON_SURFACE_VARIANT
 		val borderDp = if (active) 1.5f else 0f
 		val borderColor = if (active) EditorColors.PRIMARY else Color.TRANSPARENT
 
 		return FrameLayout(this).apply {
-			background = rippleShape(bgColor, 12f, borderDp, borderColor)
+			background = rippleShape(bgColor, 10f, borderDp, borderColor)
 			isClickable = true
 			isFocusable = true
 			setOnClickListener {
 				activeTextFontId = preset.id
-				cropView.clearTextCache()
-				cropView.invalidate()
-				renderTextFontPresetsGrid()
-				syncTextInputFontPreview()
+				if (preset.isAvailableOffline) {
+					cropView.clearTextCache()
+					cropView.invalidate()
+					renderTextFontPresetsGrid(scrollToActive = false)
+					syncTextInputFontPreview()
+					renderSubOptions()
+				} else if (!downloadingFontIds.contains(preset.id)) {
+					downloadingFontIds.add(preset.id)
+					renderTextFontPresetsGrid(scrollToActive = false)
+					lifecycleScope.launch {
+						val ok = withContext(Dispatchers.IO) {
+							MangaFontRegistry.downloadFontIfNeeded(applicationContext, preset)
+						}
+						downloadingFontIds.remove(preset.id)
+						if (ok) {
+							cropView.clearTextCache()
+							cropView.invalidate()
+							if (textInputOverlay.isVisible) {
+								renderTextFontPresetsGrid(scrollToActive = false)
+								syncTextInputFontPreview()
+							}
+							renderSubOptions()
+							showEditorSnackbar("Downloaded font \"${preset.name}\"")
+						} else {
+							if (textInputOverlay.isVisible) {
+								renderTextFontPresetsGrid(scrollToActive = false)
+							}
+							showEditorSnackbar("Connect to internet once to download \"${preset.name}\"")
+						}
+					}
+				}
 			}
 
-			val tv = TextView(this@PageCropActivity).apply {
-				text = if (preset.uppercase) preset.name.uppercase() else preset.name
-				setTextColor(fgColor)
+			val rowContent = LinearLayout(this@PageCropActivity).apply {
+				orientation = LinearLayout.HORIZONTAL
+				gravity = Gravity.CENTER_VERTICAL
+				val endPad = if (preset.isCustom) (32f * dp).roundToInt() else (14f * dp).roundToInt()
+				setPadding((14f * dp).roundToInt(), 0, endPad, 0)
+			}
+
+			val nameTv = TextView(this@PageCropActivity).apply {
+				text = preset.name
+				setTextColor(nameColor)
 				textSize = 13f
-				typeface = preset.typeface
-				letterSpacing = (preset.letterSpacingPx / 32f).coerceIn(0f, 0.1f)
+				typeface = if (active) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
 				isSingleLine = true
 				ellipsize = TextUtils.TruncateAt.END
-				val endPad = if (preset.isCustom) (28f * dp).roundToInt() else (12f * dp).roundToInt()
-				setPadding((12f * dp).roundToInt(), 0, endPad, 0)
-				gravity = Gravity.CENTER_VERTICAL
 			}
-			addView(tv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+			rowContent.addView(
+				nameTv,
+				LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+					marginEnd = (10f * dp).roundToInt()
+				},
+			)
+
+			val previewTv = TextView(this@PageCropActivity).apply {
+				when {
+					isOfflineReady -> {
+						text = if (preset.uppercase) "PREVIEW" else "Preview"
+						setTextColor(previewColor)
+						textSize = 15f
+						typeface = preset.typeface
+						letterSpacing = (preset.letterSpacingPx / 32f).coerceIn(0f, 0.1f)
+					}
+					isDownloading -> {
+						text = "Downloading…"
+						setTextColor(EditorColors.PRIMARY)
+						textSize = 11.5f
+						typeface = Typeface.DEFAULT_BOLD
+					}
+					else -> {
+						text = "↓ Tap to get"
+						setTextColor(EditorColors.ON_SURFACE_VARIANT)
+						textSize = 11.5f
+						typeface = Typeface.DEFAULT
+					}
+				}
+				isSingleLine = true
+				gravity = Gravity.END or Gravity.CENTER_VERTICAL
+			}
+			rowContent.addView(
+				previewTv,
+				LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT),
+			)
+
+			addView(
+				rowContent,
+				FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+			)
 
 			if (preset.isCustom) {
 				val delBtn = ImageButton(this@PageCropActivity).apply {
