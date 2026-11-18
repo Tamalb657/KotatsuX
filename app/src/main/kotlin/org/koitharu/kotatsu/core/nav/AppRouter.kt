@@ -103,6 +103,7 @@ import org.koitharu.kotatsu.settings.reader.ReaderTapGridConfigActivity
 import org.koitharu.kotatsu.settings.sources.auth.SourceAuthActivity
 import org.koitharu.kotatsu.settings.sources.catalog.SourcesCatalogActivity
 import org.koitharu.kotatsu.settings.storage.MangaDirectorySelectDialog
+import org.koitharu.kotatsu.settings.storage.MoveDownloadsDialog
 import org.koitharu.kotatsu.settings.storage.directories.MangaDirectoriesActivity
 import org.koitharu.kotatsu.settings.tracker.categories.TrackerCategoriesConfigSheet
 import org.koitharu.kotatsu.stats.ui.StatsActivity
@@ -385,6 +386,10 @@ class AppRouter private constructor(
 
     fun showDirectorySelectDialog() {
         MangaDirectorySelectDialog().showDistinct()
+    }
+
+    fun showMoveDownloadsDialog() {
+        MoveDownloadsDialog().showDistinct()
     }
 
     fun showFavoriteDialog(manga: Manga) = showFavoriteDialog(setOf(manga))

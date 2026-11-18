@@ -404,6 +404,10 @@
 			android:foregroundServiceType="dataSync"
 			android:label="@string/importing_manga" />
 		<service
+			android:name="org.koitharu.kotatsu.local.ui.MoveDownloadsService"
+			android:foregroundServiceType="dataSync"
+			android:label="@string/moving_downloads" />
+		<service
 			android:name="org.koitharu.kotatsu.widget.shelf.ShelfWidgetService"
 			android:label="@string/manga_shelf"
 			android:permission="android.permission.BIND_REMOTEVIEWS" />

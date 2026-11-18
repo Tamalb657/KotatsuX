@@ -1280,4 +1280,18 @@ Optional — skip it and you appear as anon.</string>
 	<string name="sources_version_downloaded">%1$s, updated since the app was installed</string>
 	<string name="sources_up_to_date">Manga sources are up to date</string>
 	<string name="sources_updated">Manga sources updated</string>
+	<string name="move_your_downloads">Move your downloads</string>
+	<string name="move_your_downloads_summary">Move or copy downloaded manga to a selected saved location</string>
+	<string name="select_saved_location">Select saved location</string>
+	<string name="move_action">Move</string>
+	<string name="copy_action">Copy</string>
+	<string name="moving_downloads">Moving downloads…</string>
+	<string name="copying_downloads">Copying downloads…</string>
+	<string name="downloads_moved">Downloads moved</string>
+	<string name="downloads_copied">Downloads copied</string>
+	<string name="downloads_moved_summary">Moved %1$d manga to %2$s</string>
+	<string name="downloads_copied_summary">Copied %1$d manga to %2$s</string>
+	<string name="no_downloads_to_move">No downloaded manga found</string>
+	<string name="downloads_already_in_location">All downloads are already in %1$s</string>
+	<string name="move_progress_pattern">%1$d / %2$d • %3$s (%4$d%%)</string>
 </resources>

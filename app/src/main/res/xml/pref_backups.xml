@@ -25,4 +25,11 @@
         android:persistent="false"
         android:title="@string/periodic_backups" />
 
+    <Preference
+        android:icon="@drawable/ic_storage"
+        android:key="move_downloads"
+        android:persistent="false"
+        android:summary="@string/move_your_downloads_summary"
+        android:title="@string/move_your_downloads" />
+
 </PreferenceScreen>

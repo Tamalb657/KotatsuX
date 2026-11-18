@@ -73,6 +73,11 @@ class BackupsSettingsFragment : BasePreferenceFragment(R.string.backup_restore),
                 true
             }
 
+            AppSettings.KEY_MOVE_DOWNLOADS -> {
+                router.showMoveDownloadsDialog()
+                true
+            }
+
             else -> super.onPreferenceTreeClick(preference)
         }
     }

@@ -23,6 +23,8 @@ import org.koitharu.kotatsu.core.util.ext.isHttpUrl
 import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
 import org.koitharu.kotatsu.local.data.LocalStorageManager
 import org.koitharu.kotatsu.local.domain.MoveLocalMangaUseCase
+import org.koitharu.kotatsu.local.domain.model.LocalManga
+import org.koitharu.kotatsu.local.ui.MoveDownloadsService
 import org.koitharu.kotatsu.parsers.model.Manga
 
 class DetailsMenuProvider(
@@ -166,7 +168,14 @@ class DetailsMenuProvider(
 				setTitle(if (isMove) R.string.move_to else R.string.copy_to)
 				setMessage(activity.getString(R.string.move_or_copy_pick))
 				setItems(names.toTypedArray()) { _, which ->
-					viewModel.moveLocal(targets[which], isMove)
+					val localFile = runCatching { LocalManga(manga).file }.getOrNull()
+					if (localFile != null && MoveDownloadsService.startSingle(activity, localFile, targets[which], isMove)) {
+						if (isMove) {
+							activity.finishAfterTransition()
+						}
+					} else {
+						viewModel.moveLocal(targets[which], isMove)
+					}
 				}
 				setNegativeButton(android.R.string.cancel, null)
 			}.show()
