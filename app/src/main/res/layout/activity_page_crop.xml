@@ -1,368 +1,1224 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<FrameLayout
 	xmlns:android="http://schemas.android.com/apk/res/android"
 	xmlns:app="http://schemas.android.com/apk/res-auto"
 	xmlns:tools="http://schemas.android.com/tools"
+	android:id="@+id/editorRoot"
 	android:layout_width="match_parent"
 	android:layout_height="match_parent"
-	android:background="#FF121418"
-	android:orientation="vertical">
+	android:background="#FF111318"
+	android:clipChildren="false">
 
-	<com.google.android.material.appbar.AppBarLayout
-		android:layout_width="match_parent"
-		android:layout_height="wrap_content"
-		android:background="#FF121418"
-		android:fitsSystemWindows="true"
-		app:elevation="0dp">
-
-		<com.google.android.material.appbar.MaterialToolbar
-			android:id="@+id/toolbar"
-			android:layout_width="match_parent"
-			android:layout_height="?actionBarSize"
-			app:navigationIcon="?homeAsUpIndicator"
-			app:title="@string/crop_and_save"
-			app:titleTextAppearance="?textAppearanceTitleMedium">
-
-			<LinearLayout
-				android:layout_width="wrap_content"
-				android:layout_height="match_parent"
-				android:layout_gravity="end"
-				android:gravity="center_vertical"
-				android:orientation="horizontal"
-				android:paddingEnd="12dp">
-
-				<com.google.android.material.button.MaterialButton
-					android:id="@+id/button_undo"
-					style="@style/Widget.Material3.Button.IconButton"
-					android:layout_width="38dp"
-					android:layout_height="38dp"
-					android:contentDescription="@string/undo"
-					app:icon="@drawable/ic_undo"
-					app:iconTint="?attr/colorOnSurface" />
-
-				<com.google.android.material.button.MaterialButton
-					android:id="@+id/button_redo"
-					style="@style/Widget.Material3.Button.IconButton"
-					android:layout_width="38dp"
-					android:layout_height="38dp"
-					android:contentDescription="@string/redo"
-					app:icon="@drawable/ic_redo"
-					app:iconTint="?attr/colorOnSurface" />
-
-				<com.google.android.material.button.MaterialButton
-					android:id="@+id/button_reset"
-					style="@style/Widget.Material3.Button.IconButton"
-					android:layout_width="38dp"
-					android:layout_height="38dp"
-					android:contentDescription="@string/reset_crop"
-					app:icon="@drawable/ic_reset"
-					app:iconTint="?attr/colorOnSurface" />
-
-				<com.google.android.material.button.MaterialButton
-					android:id="@+id/button_save"
-					style="@style/Widget.Material3.Button"
-					android:layout_width="wrap_content"
-					android:layout_height="38dp"
-					android:layout_marginStart="4dp"
-					android:insetTop="0dp"
-					android:insetBottom="0dp"
-					android:paddingHorizontal="14dp"
-					android:text="@string/save"
-					app:icon="@drawable/ic_save" />
-			</LinearLayout>
-		</com.google.android.material.appbar.MaterialToolbar>
-	</com.google.android.material.appbar.AppBarLayout>
-
-	<org.koitharu.kotatsu.reader.ui.crop.CropDrawView
-		android:id="@+id/cropView"
-		android:layout_width="match_parent"
-		android:layout_height="0dp"
-		android:layout_weight="1" />
-
-	<!-- Bottom panel with rounded top and contextual options -->
+	<!-- ======================================================================
+	     MAIN VERTICAL MOBILE EDITOR SHELL
+	     ====================================================================== -->
 	<LinearLayout
+		android:id="@+id/editorShell"
 		android:layout_width="match_parent"
-		android:layout_height="wrap_content"
-		android:background="@drawable/bg_editor_sheet"
-		android:elevation="8dp"
-		android:orientation="vertical"
-		android:paddingHorizontal="14dp"
-		android:paddingTop="12dp"
-		android:paddingBottom="8dp">
+		android:layout_height="match_parent"
+		android:clipChildren="false"
+		android:orientation="vertical">
 
-		<!-- Contextual Options Strip -->
-		<FrameLayout
-			android:id="@+id/panel_options"
+		<!-- 1. MATERIAL 3 TOP APP BAR -->
+		<LinearLayout
+			android:id="@+id/topAppBar"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:minHeight="48dp">
+			android:background="#FF111318"
+			android:gravity="center_vertical"
+			android:minHeight="56dp"
+			android:orientation="horizontal"
+			android:paddingStart="8dp"
+			android:paddingEnd="12dp">
 
-			<!-- Crop / Lasso contextual options -->
+			<ImageButton
+				android:id="@+id/button_back"
+				android:layout_width="40dp"
+				android:layout_height="40dp"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:contentDescription="@android:string/cancel"
+				android:padding="9dp"
+				android:scaleType="fitCenter"
+				android:src="@drawable/ic_editor_back"
+				app:tint="#FFE2E2E9" />
+
+			<TextView
+				android:id="@+id/topBarTitle"
+				android:layout_width="0dp"
+				android:layout_height="wrap_content"
+				android:layout_marginStart="4dp"
+				android:layout_marginEnd="8dp"
+				android:layout_weight="1"
+				android:ellipsize="end"
+				android:fontFamily="@font/google_sans_medium"
+				android:singleLine="true"
+				android:text="Draw Brush"
+				android:textColor="#FFE2E2E9"
+				android:textSize="17sp"
+				tools:ignore="HardcodedText" />
+
+			<!-- Grouped Undo / Redo / Reset Capsule -->
 			<LinearLayout
-				android:id="@+id/layout_options_crop"
-				android:layout_width="match_parent"
+				android:id="@+id/capsuleHistory"
+				android:layout_width="wrap_content"
 				android:layout_height="wrap_content"
 				android:gravity="center_vertical"
 				android:orientation="horizontal"
-				android:paddingVertical="4dp">
+				android:padding="2dp">
+
+				<ImageButton
+					android:id="@+id/button_undo"
+					android:layout_width="32dp"
+					android:layout_height="32dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:contentDescription="@string/undo"
+					android:padding="7dp"
+					android:scaleType="fitCenter"
+					android:src="@drawable/ic_undo"
+					app:tint="#FFE2E2E9" />
+
+				<ImageButton
+					android:id="@+id/button_redo"
+					android:layout_width="32dp"
+					android:layout_height="32dp"
+					android:layout_marginStart="2dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:contentDescription="@string/redo"
+					android:padding="7dp"
+					android:scaleType="fitCenter"
+					android:src="@drawable/ic_redo"
+					app:tint="#FFE2E2E9" />
+
+				<ImageButton
+					android:id="@+id/button_reset"
+					android:layout_width="32dp"
+					android:layout_height="32dp"
+					android:layout_marginStart="2dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:contentDescription="@string/reset_crop"
+					android:padding="7dp"
+					android:scaleType="fitCenter"
+					android:src="@drawable/ic_reset"
+					app:tint="#FFE2E2E9" />
+			</LinearLayout>
+
+			<!-- Primary Filled Pill Save Button -->
+			<LinearLayout
+				android:id="@+id/button_save"
+				android:layout_width="wrap_content"
+				android:layout_height="36dp"
+				android:layout_marginStart="6dp"
+				android:clickable="true"
+				android:focusable="true"
+				android:gravity="center"
+				android:orientation="horizontal"
+				android:paddingHorizontal="14dp">
+
+				<ImageView
+					android:layout_width="16dp"
+					android:layout_height="16dp"
+					android:importantForAccessibility="no"
+					android:src="@drawable/ic_save"
+					app:tint="#FF062E6F" />
 
 				<TextView
-					android:id="@+id/textView_crop_hint"
+					android:layout_width="wrap_content"
+					android:layout_height="wrap_content"
+					android:layout_marginStart="6dp"
+					android:fontFamily="@font/google_sans_medium"
+					android:text="@string/save"
+					android:textColor="#FF062E6F"
+					android:textSize="13sp"
+					android:textStyle="bold" />
+			</LinearLayout>
+		</LinearLayout>
+
+		<!-- 2. INTERACTIVE CANVAS WORKSPACE -->
+		<FrameLayout
+			android:id="@+id/canvasViewport"
+			android:layout_width="match_parent"
+			android:layout_height="0dp"
+			android:layout_weight="1"
+			android:background="#FF151922"
+			android:clipChildren="true">
+
+			<org.koitharu.kotatsu.reader.ui.crop.CropDrawView
+				android:id="@+id/cropView"
+				android:layout_width="match_parent"
+				android:layout_height="match_parent" />
+
+			<!-- Live Centered Brush / Eraser Size Ring + Pixel Pill -->
+			<LinearLayout
+				android:id="@+id/brushPreviewContainer"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:layout_gravity="center"
+				android:gravity="center_horizontal"
+				android:orientation="vertical"
+				android:visibility="gone">
+
+				<FrameLayout
+					android:id="@+id/brushPreviewRing"
+					android:layout_width="32dp"
+					android:layout_height="32dp"
+					android:elevation="6dp">
+
+					<View
+						android:id="@+id/brushPreviewCenterDot"
+						android:layout_width="4dp"
+						android:layout_height="4dp"
+						android:layout_gravity="center" />
+				</FrameLayout>
+
+				<TextView
+					android:id="@+id/brushPreviewLabel"
+					android:layout_width="wrap_content"
+					android:layout_height="wrap_content"
+					android:layout_marginTop="8dp"
+					android:elevation="6dp"
+					android:fontFamily="monospace"
+					android:paddingHorizontal="10dp"
+					android:paddingVertical="3dp"
+					android:text="16 px"
+					android:textColor="#FFE2E2E9"
+					android:textSize="11sp"
+					android:textStyle="bold"
+					tools:ignore="HardcodedText" />
+			</LinearLayout>
+
+			<!-- Compact Material 3 Contextual Action Menu for Selected Perspective Text -->
+			<LinearLayout
+				android:id="@+id/textContextMenu"
+				android:layout_width="208dp"
+				android:layout_height="wrap_content"
+				android:elevation="14dp"
+				android:orientation="vertical"
+				android:paddingVertical="6dp"
+				android:visibility="gone">
+
+				<LinearLayout
+					android:id="@+id/ctxBtnEdit"
+					android:layout_width="match_parent"
+					android:layout_height="40dp"
+					android:background="?attr/selectableItemBackground"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center_vertical"
+					android:orientation="horizontal"
+					android:paddingHorizontal="14dp">
+
+					<ImageView
+						android:layout_width="16dp"
+						android:layout_height="16dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_edit"
+						app:tint="#FFA8C7FA" />
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="10dp"
+						android:text="Edit Text &amp; Font"
+						android:textColor="#FFE2E2E9"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/ctxBtnNextMode"
+					android:layout_width="match_parent"
+					android:layout_height="40dp"
+					android:background="?attr/selectableItemBackground"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center_vertical"
+					android:orientation="horizontal"
+					android:paddingHorizontal="14dp">
+
+					<ImageView
+						android:layout_width="16dp"
+						android:layout_height="16dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_editor_transform_mode"
+						app:tint="#FFA8C7FA" />
+
+					<TextView
+						android:layout_width="0dp"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="10dp"
+						android:layout_weight="1"
+						android:text="Next Transform Mode"
+						android:textColor="#FFE2E2E9"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+
+					<TextView
+						android:id="@+id/ctxModeBadge"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:fontFamily="monospace"
+						android:paddingHorizontal="6dp"
+						android:paddingVertical="2dp"
+						android:text="→ M2"
+						android:textColor="#FFDAE2F9"
+						android:textSize="10sp"
+						android:textStyle="bold"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/ctxBtnResetQuad"
+					android:layout_width="match_parent"
+					android:layout_height="40dp"
+					android:background="?attr/selectableItemBackground"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center_vertical"
+					android:orientation="horizontal"
+					android:paddingHorizontal="14dp">
+
+					<ImageView
+						android:layout_width="16dp"
+						android:layout_height="16dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_editor_quad_reset"
+						app:tint="#FFC4C6D0" />
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="10dp"
+						android:text="Reset Quadrilateral"
+						android:textColor="#FFE2E2E9"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/ctxBtnDuplicate"
+					android:layout_width="match_parent"
+					android:layout_height="40dp"
+					android:background="?attr/selectableItemBackground"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center_vertical"
+					android:orientation="horizontal"
+					android:paddingHorizontal="14dp">
+
+					<ImageView
+						android:layout_width="16dp"
+						android:layout_height="16dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_editor_duplicate"
+						app:tint="#FFC4C6D0" />
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="10dp"
+						android:text="Duplicate"
+						android:textColor="#FFE2E2E9"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<View
+					android:layout_width="match_parent"
+					android:layout_height="1dp"
+					android:layout_marginVertical="4dp"
+					android:background="#FF44474E" />
+
+				<LinearLayout
+					android:id="@+id/ctxBtnDelete"
+					android:layout_width="match_parent"
+					android:layout_height="40dp"
+					android:background="?attr/selectableItemBackground"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center_vertical"
+					android:orientation="horizontal"
+					android:paddingHorizontal="14dp">
+
+					<ImageView
+						android:layout_width="16dp"
+						android:layout_height="16dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_delete"
+						app:tint="#FFFFB4AB" />
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="10dp"
+						android:text="Remove Text"
+						android:textColor="#FFFFB4AB"
+						android:textSize="12sp"
+						android:textStyle="bold"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+			</LinearLayout>
+
+			<!-- Material 3 Floating Snackbar Notification -->
+			<LinearLayout
+				android:id="@+id/snackbarBanner"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_gravity="bottom"
+				android:layout_marginHorizontal="16dp"
+				android:layout_marginBottom="12dp"
+				android:alpha="0"
+				android:elevation="10dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingHorizontal="16dp"
+				android:paddingVertical="10dp"
+				android:visibility="gone">
+
+				<TextView
+					android:id="@+id/snackbarText"
 					android:layout_width="0dp"
 					android:layout_height="wrap_content"
 					android:layout_weight="1"
-					android:text="@string/crop"
-					android:textAppearance="?textAppearanceBodyMedium"
-					android:textColor="?android:attr/textColorSecondary" />
-
-				<com.google.android.material.button.MaterialButton
-					android:id="@+id/button_format"
-					style="@style/Widget.Material3.Button.OutlinedButton"
-					android:layout_width="wrap_content"
-					android:layout_height="36dp"
-					android:insetTop="0dp"
-					android:insetBottom="0dp"
-					android:paddingHorizontal="12dp"
-					android:text="@string/editor_export_png"
+					android:textColor="#FF2E3036"
 					android:textSize="12sp" />
-			</LinearLayout>
 
-			<!-- Draw / Color / Text contextual options -->
-			<LinearLayout
-				android:id="@+id/layout_options_draw"
-				android:layout_width="match_parent"
-				android:layout_height="wrap_content"
-				android:orientation="vertical"
-				android:visibility="gone">
-
-				<!-- Palette & Eyedropper Row -->
-				<LinearLayout
-					android:layout_width="match_parent"
+				<TextView
+					android:id="@+id/snackbarActionBtn"
+					android:layout_width="wrap_content"
 					android:layout_height="wrap_content"
-					android:gravity="center_vertical"
-					android:orientation="horizontal">
-
-					<View
-						android:id="@+id/swatch_0"
-						android:layout_width="30dp"
-						android:layout_height="30dp"
-						android:layout_marginEnd="8dp"
-						android:background="@drawable/bg_color_swatch"
-						tools:backgroundTint="@android:color/black" />
-
-					<View
-						android:id="@+id/swatch_1"
-						android:layout_width="30dp"
-						android:layout_height="30dp"
-						android:layout_marginEnd="8dp"
-						android:background="@drawable/bg_color_swatch" />
-
-					<View
-						android:id="@+id/swatch_2"
-						android:layout_width="30dp"
-						android:layout_height="30dp"
-						android:layout_marginEnd="8dp"
-						android:background="@drawable/bg_color_swatch" />
-
-					<View
-						android:id="@+id/swatch_3"
-						android:layout_width="30dp"
-						android:layout_height="30dp"
-						android:layout_marginEnd="8dp"
-						android:background="@drawable/bg_color_swatch" />
-
-					<View
-						android:id="@+id/swatch_4"
-						android:layout_width="30dp"
-						android:layout_height="30dp"
-						android:layout_marginEnd="8dp"
-						android:background="@drawable/bg_color_swatch" />
-
-					<View
-						android:id="@+id/swatch_5"
-						android:layout_width="30dp"
-						android:layout_height="30dp"
-						android:background="@drawable/bg_color_swatch" />
-
-					<View
-						android:layout_width="0dp"
-						android:layout_height="1dp"
-						android:layout_weight="1" />
-
-					<com.google.android.material.button.MaterialButton
-						android:id="@+id/button_eyedropper"
-						style="@style/Widget.Material3.Button.TonalButton"
-						android:layout_width="wrap_content"
-						android:layout_height="36dp"
-						android:insetTop="0dp"
-						android:insetBottom="0dp"
-						android:paddingHorizontal="10dp"
-						android:text="@string/pick_color"
-						android:textSize="12sp"
-						app:icon="@drawable/ic_color_lens" />
-				</LinearLayout>
-
-				<!-- Slider Row -->
-				<LinearLayout
-					android:layout_width="match_parent"
-					android:layout_height="wrap_content"
-					android:layout_marginTop="2dp"
-					android:gravity="center_vertical"
-					android:orientation="horizontal">
-
-					<TextView
-						android:id="@+id/textView_stroke_width"
-						android:layout_width="wrap_content"
-						android:layout_height="wrap_content"
-						android:gravity="center"
-						android:minWidth="36dp"
-						android:text="@string/stroke_width"
-						android:textAppearance="?textAppearanceLabelMedium" />
-
-					<com.google.android.material.slider.Slider
-						android:id="@+id/slider_stroke"
-						android:layout_width="0dp"
-						android:layout_height="wrap_content"
-						android:layout_weight="1"
-						android:stepSize="1"
-						android:valueFrom="1"
-						android:valueTo="100" />
-				</LinearLayout>
-			</LinearLayout>
-
-			<!-- Erase options -->
-			<LinearLayout
-				android:id="@+id/layout_options_erase"
-				android:layout_width="match_parent"
-				android:layout_height="wrap_content"
-				android:orientation="vertical"
-				android:visibility="gone">
-
-				<LinearLayout
-					android:layout_width="match_parent"
-					android:layout_height="wrap_content"
-					android:gravity="center_vertical"
-					android:orientation="horizontal">
-
-					<TextView
-						android:id="@+id/textView_erase_label"
-						android:layout_width="wrap_content"
-						android:layout_height="wrap_content"
-						android:gravity="center"
-						android:minWidth="36dp"
-						android:text="@string/eraser"
-						android:textAppearance="?textAppearanceLabelMedium" />
-
-					<com.google.android.material.slider.Slider
-						android:id="@+id/slider_erase"
-						android:layout_width="0dp"
-						android:layout_height="wrap_content"
-						android:layout_weight="1"
-						android:stepSize="1"
-						android:valueFrom="5"
-						android:valueTo="120" />
-				</LinearLayout>
+					android:layout_marginStart="12dp"
+					android:fontFamily="@font/google_sans_medium"
+					android:paddingHorizontal="8dp"
+					android:paddingVertical="2dp"
+					android:text="@string/share"
+					android:textColor="#FF062E6F"
+					android:textSize="12sp"
+					android:textStyle="bold"
+					android:visibility="gone" />
 			</LinearLayout>
 		</FrameLayout>
 
-		<!-- Divider -->
-		<View
-			android:layout_width="match_parent"
-			android:layout_height="1dp"
-			android:layout_marginVertical="6dp"
-			android:background="?attr/colorOutlineVariant" />
-
-		<!-- Bottom Tools Bar -->
+		<!-- 3. MATERIAL 3 EXPRESSIVE BOTTOM CONTROL SHEET -->
 		<LinearLayout
-			android:id="@+id/bottom_tools_bar"
+			android:id="@+id/bottomSheet"
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content"
-			android:gravity="center"
-			android:orientation="horizontal">
+			android:background="@drawable/bg_editor_sheet"
+			android:clipChildren="false"
+			android:clipToPadding="false"
+			android:elevation="16dp"
+			android:orientation="vertical"
+			android:paddingHorizontal="12dp"
+			android:paddingTop="12dp"
+			android:paddingBottom="10dp">
 
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_crop"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:layout_width="0dp"
-				android:layout_height="40dp"
-				android:layout_marginEnd="4dp"
-				android:layout_weight="1"
-				android:insetLeft="0dp"
-				android:insetRight="0dp"
-				android:insetTop="0dp"
-				android:insetBottom="0dp"
-				android:paddingHorizontal="4dp"
-				android:text="@string/crop"
-				android:textSize="11sp"
-				app:icon="@drawable/ic_crop"
-				app:iconSize="16dp" />
+			<!-- Row 1: Contextual Sub-Options Strip -->
+			<HorizontalScrollView
+				android:id="@+id/subOptionsScroll"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:fillViewport="true"
+				android:overScrollMode="never"
+				android:scrollbars="none">
 
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_lasso"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:layout_width="0dp"
-				android:layout_height="40dp"
-				android:layout_marginEnd="4dp"
-				android:layout_weight="1"
-				android:insetLeft="0dp"
-				android:insetRight="0dp"
-				android:insetTop="0dp"
-				android:insetBottom="0dp"
-				android:paddingHorizontal="4dp"
-				android:text="@string/lasso"
-				android:textSize="11sp"
-				app:icon="@drawable/ic_lasso"
-				app:iconSize="16dp" />
+				<LinearLayout
+					android:id="@+id/subOptionsBar"
+					android:layout_width="wrap_content"
+					android:layout_height="wrap_content"
+					android:gravity="center_vertical"
+					android:minHeight="36dp"
+					android:orientation="horizontal"
+					android:paddingHorizontal="2dp"
+					android:paddingVertical="2dp" />
+			</HorizontalScrollView>
 
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_draw"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:layout_width="0dp"
-				android:layout_height="40dp"
-				android:layout_marginEnd="4dp"
-				android:layout_weight="1"
-				android:insetLeft="0dp"
-				android:insetRight="0dp"
-				android:insetTop="0dp"
-				android:insetBottom="0dp"
-				android:paddingHorizontal="4dp"
-				android:text="@string/draw"
-				android:textSize="11sp"
-				app:icon="@drawable/ic_brush"
-				app:iconSize="16dp" />
+			<!-- Row 2: Authentic Material 3 Expressive Slider Card -->
+			<LinearLayout
+				android:id="@+id/sliderCard"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="8dp"
+				android:clipChildren="false"
+				android:clipToPadding="false"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingHorizontal="14dp"
+				android:paddingVertical="6dp">
 
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_erase"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:layout_width="0dp"
-				android:layout_height="40dp"
-				android:layout_marginEnd="4dp"
-				android:layout_weight="1"
-				android:insetLeft="0dp"
-				android:insetRight="0dp"
-				android:insetTop="0dp"
-				android:insetBottom="0dp"
-				android:paddingHorizontal="4dp"
-				android:text="@string/eraser"
-				android:textSize="11sp"
-				app:icon="@drawable/ic_eraser"
-				app:iconSize="16dp" />
+				<TextView
+					android:id="@+id/sliderLabel"
+					android:layout_width="wrap_content"
+					android:layout_height="wrap_content"
+					android:minWidth="64dp"
+					android:text="Brush size"
+					android:textColor="#FFC4C6D0"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
 
-			<com.google.android.material.button.MaterialButton
-				android:id="@+id/button_mode_text"
-				style="@style/Widget.Material3.Button.TonalButton"
-				android:layout_width="0dp"
-				android:layout_height="40dp"
-				android:layout_weight="1"
-				android:insetLeft="0dp"
-				android:insetRight="0dp"
-				android:insetTop="0dp"
-				android:insetBottom="0dp"
-				android:paddingHorizontal="4dp"
-				android:text="@string/text"
-				android:textSize="11sp"
-				app:icon="@drawable/ic_text"
-				app:iconSize="16dp" />
+				<org.koitharu.kotatsu.reader.ui.crop.M3ExpressiveSliderView
+					android:id="@+id/m3Slider"
+					android:layout_width="0dp"
+					android:layout_height="36dp"
+					android:layout_marginHorizontal="10dp"
+					android:layout_weight="1" />
+
+				<TextView
+					android:id="@+id/sliderValueBadge"
+					android:layout_width="wrap_content"
+					android:layout_height="wrap_content"
+					android:fontFamily="monospace"
+					android:gravity="center"
+					android:minWidth="54dp"
+					android:paddingHorizontal="10dp"
+					android:paddingVertical="4dp"
+					android:text="16 px"
+					android:textColor="#FFE2E2E9"
+					android:textSize="12sp"
+					android:textStyle="bold"
+					tools:ignore="HardcodedText" />
+			</LinearLayout>
+
+			<!-- Row 3: Fixed 5-Tool Dock (Crop, Lasso, Draw, Eraser, Text) -->
+			<LinearLayout
+				android:id="@+id/toolDockNav"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="10dp"
+				android:gravity="center"
+				android:orientation="horizontal">
+
+				<LinearLayout
+					android:id="@+id/button_mode_crop"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_marginEnd="6dp"
+					android:layout_weight="1"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="vertical"
+					android:paddingVertical="8dp">
+
+					<ImageView
+						android:id="@+id/icon_mode_crop"
+						android:layout_width="20dp"
+						android:layout_height="20dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_crop" />
+
+					<TextView
+						android:id="@+id/label_mode_crop"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginTop="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="@string/crop"
+						android:textSize="11sp" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/button_mode_lasso"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_marginEnd="6dp"
+					android:layout_weight="1"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="vertical"
+					android:paddingVertical="8dp">
+
+					<ImageView
+						android:id="@+id/icon_mode_lasso"
+						android:layout_width="20dp"
+						android:layout_height="20dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_lasso" />
+
+					<TextView
+						android:id="@+id/label_mode_lasso"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginTop="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="@string/lasso"
+						android:textSize="11sp" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/button_mode_draw"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_marginEnd="6dp"
+					android:layout_weight="1"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="vertical"
+					android:paddingVertical="8dp">
+
+					<ImageView
+						android:id="@+id/icon_mode_draw"
+						android:layout_width="20dp"
+						android:layout_height="20dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_editor_draw" />
+
+					<TextView
+						android:id="@+id/label_mode_draw"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginTop="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="@string/draw"
+						android:textSize="11sp" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/button_mode_erase"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_marginEnd="6dp"
+					android:layout_weight="1"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="vertical"
+					android:paddingVertical="8dp">
+
+					<ImageView
+						android:id="@+id/icon_mode_erase"
+						android:layout_width="20dp"
+						android:layout_height="20dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_eraser" />
+
+					<TextView
+						android:id="@+id/label_mode_erase"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginTop="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="@string/eraser"
+						android:textSize="11sp" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/button_mode_text"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="vertical"
+					android:paddingVertical="8dp">
+
+					<ImageView
+						android:id="@+id/icon_mode_text"
+						android:layout_width="20dp"
+						android:layout_height="20dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_editor_text" />
+
+					<TextView
+						android:id="@+id/label_mode_text"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginTop="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="@string/text"
+						android:textSize="11sp" />
+				</LinearLayout>
+			</LinearLayout>
 		</LinearLayout>
 	</LinearLayout>
-</LinearLayout>
+
+	<!-- ======================================================================
+	     3B. CLEAN MATERIAL 3 PERSPECTIVE TEXT DIALOG OVERLAY
+	     ====================================================================== -->
+	<FrameLayout
+		android:id="@+id/textInputOverlay"
+		android:layout_width="match_parent"
+		android:layout_height="match_parent"
+		android:background="#A3000000"
+		android:clickable="true"
+		android:elevation="24dp"
+		android:focusable="true"
+		android:padding="16dp"
+		android:visibility="gone">
+
+		<ScrollView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_gravity="center"
+			android:overScrollMode="never"
+			android:scrollbars="none">
+
+			<LinearLayout
+				android:id="@+id/textDialogCard"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_gravity="center_horizontal"
+				android:clickable="true"
+				android:focusable="true"
+				android:maxWidth="348dp"
+				android:orientation="vertical"
+				android:padding="20dp">
+
+			<!-- Header -->
+			<LinearLayout
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:gravity="center_vertical"
+				android:orientation="horizontal">
+
+				<TextView
+					android:id="@+id/textSheetTitle"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:fontFamily="@font/google_sans_bold"
+					android:text="Add text"
+					android:textColor="#FFE2E2E9"
+					android:textSize="16sp"
+					tools:ignore="HardcodedText" />
+
+				<ImageButton
+					android:id="@+id/btnCloseTextOverlay"
+					android:layout_width="28dp"
+					android:layout_height="28dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:contentDescription="@android:string/cancel"
+					android:padding="5dp"
+					android:scaleType="fitCenter"
+					android:src="@drawable/ic_editor_close"
+					app:tint="#FFC4C6D0" />
+			</LinearLayout>
+
+			<!-- Outlined / Filled M3 Text Field -->
+			<LinearLayout
+				android:id="@+id/textInputFieldBox"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="12dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingHorizontal="14dp"
+				android:paddingVertical="10dp">
+
+				<EditText
+					android:id="@+id/canvasTextInput"
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:background="@null"
+					android:hint="Type dialogue or SFX..."
+					android:imeOptions="actionDone"
+					android:inputType="textCapSentences|textMultiLine"
+					android:maxLength="80"
+					android:maxLines="2"
+					android:textColor="#FFE2E2E9"
+					android:textColorHint="#FF8E9099"
+					android:textSize="15sp"
+					tools:ignore="HardcodedText" />
+
+				<ImageButton
+					android:id="@+id/btnClearTextInput"
+					android:layout_width="24dp"
+					android:layout_height="24dp"
+					android:layout_marginStart="6dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:contentDescription="@android:string/cancel"
+					android:padding="4dp"
+					android:scaleType="fitCenter"
+					android:src="@drawable/ic_editor_close"
+					android:visibility="gone"
+					app:tint="#FFC4C6D0" />
+			</LinearLayout>
+
+			<!-- Font Style Header + Custom Font Toggle -->
+			<LinearLayout
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="12dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal">
+
+				<TextView
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:text="Font style"
+					android:textColor="#FFC4C6D0"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+
+				<LinearLayout
+					android:id="@+id/btnCustomFontToggle"
+					android:layout_width="wrap_content"
+					android:layout_height="26dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="horizontal"
+					android:paddingHorizontal="10dp">
+
+					<ImageView
+						android:id="@+id/iconCustomFontToggle"
+						android:layout_width="14dp"
+						android:layout_height="14dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_add"
+						app:tint="#FFA8C7FA" />
+
+					<TextView
+						android:id="@+id/labelCustomFontToggle"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="Custom font"
+						android:textColor="#FFA8C7FA"
+						android:textSize="11sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+			</LinearLayout>
+
+			<!-- Collapsible Custom Font Drawer -->
+			<LinearLayout
+				android:id="@+id/customFontDrawer"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="8dp"
+				android:orientation="vertical"
+				android:padding="10dp"
+				android:visibility="gone">
+
+				<LinearLayout
+					android:id="@+id/customFontInputBox"
+					android:layout_width="match_parent"
+					android:layout_height="wrap_content"
+					android:gravity="center_vertical"
+					android:orientation="horizontal"
+					android:paddingHorizontal="10dp"
+					android:paddingVertical="6dp">
+
+					<EditText
+						android:id="@+id/customFontNameInput"
+						android:layout_width="0dp"
+						android:layout_height="wrap_content"
+						android:layout_weight="1"
+						android:background="@null"
+						android:hint="System font (e.g. serif, monospace)"
+						android:imeOptions="actionDone"
+						android:inputType="text"
+						android:maxLength="40"
+						android:singleLine="true"
+						android:textColor="#FFE2E2E9"
+						android:textColorHint="#FF8E9099"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+
+					<TextView
+						android:id="@+id/btnCustomFontCaps"
+						android:layout_width="wrap_content"
+						android:layout_height="24dp"
+						android:layout_marginStart="6dp"
+						android:clickable="true"
+						android:focusable="true"
+						android:gravity="center"
+						android:paddingHorizontal="8dp"
+						android:text="AA"
+						android:textColor="#FFC4C6D0"
+						android:textSize="10sp"
+						android:textStyle="bold"
+						tools:ignore="HardcodedText" />
+
+					<TextView
+						android:id="@+id/btnCustomFontLoad"
+						android:layout_width="wrap_content"
+						android:layout_height="24dp"
+						android:layout_marginStart="6dp"
+						android:clickable="true"
+						android:focusable="true"
+						android:fontFamily="@font/google_sans_medium"
+						android:gravity="center"
+						android:paddingHorizontal="10dp"
+						android:text="Load"
+						android:textColor="#FF062E6F"
+						android:textSize="11sp"
+						android:textStyle="bold"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<LinearLayout
+					android:id="@+id/btnUploadFontFile"
+					android:layout_width="match_parent"
+					android:layout_height="34dp"
+					android:layout_marginTop="8dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="horizontal">
+
+					<ImageView
+						android:layout_width="14dp"
+						android:layout_height="14dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_editor_upload"
+						app:tint="#FFA8C7FA" />
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="6dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="Upload .TTF / .OTF file"
+						android:textColor="#FFE2E2E9"
+						android:textSize="11sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+			</LinearLayout>
+
+			<!-- Borderless Tonal 2x4 Font Pill Grid -->
+			<ScrollView
+				android:id="@+id/fontPresetsScroll"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="8dp"
+				android:overScrollMode="never"
+				android:scrollbars="none">
+
+				<LinearLayout
+					android:id="@+id/textFontPresetsContainer"
+					android:layout_width="match_parent"
+					android:layout_height="wrap_content"
+					android:orientation="vertical" />
+			</ScrollView>
+
+			<!-- 8 Refined Color Swatches -->
+			<LinearLayout
+				android:id="@+id/textColorSwatchesRow"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="14dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal" />
+
+			<!-- Always-Visible Action Footer -->
+			<LinearLayout
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="16dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal">
+
+				<LinearLayout
+					android:id="@+id/btnDeleteTextSheet"
+					android:layout_width="wrap_content"
+					android:layout_height="34dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="horizontal"
+					android:paddingHorizontal="12dp">
+
+					<ImageView
+						android:layout_width="14dp"
+						android:layout_height="14dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_delete"
+						app:tint="#FFFFB4AB" />
+
+					<TextView
+						android:id="@+id/deleteTextSheetLabel"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="4dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="Remove"
+						android:textColor="#FFFFB4AB"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<View
+					android:layout_width="0dp"
+					android:layout_height="1dp"
+					android:layout_weight="1" />
+
+				<TextView
+					android:id="@+id/btnCancelTextSheet"
+					android:layout_width="wrap_content"
+					android:layout_height="34dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="14dp"
+					android:text="@android:string/cancel"
+					android:textColor="#FFC4C6D0"
+					android:textSize="12sp" />
+
+				<TextView
+					android:id="@+id/btnApplyTextSheet"
+					android:layout_width="wrap_content"
+					android:layout_height="34dp"
+					android:layout_marginStart="6dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="20dp"
+					android:text="Apply"
+					android:textColor="#FF062E6F"
+					android:textSize="12sp"
+					android:textStyle="bold"
+					tools:ignore="HardcodedText" />
+			</LinearLayout>
+		</LinearLayout>
+		</ScrollView>
+	</FrameLayout>
+
+	<!-- ======================================================================
+	     4. MATERIAL 3 SAVE & EXPORT MODAL OVERLAY
+	     ====================================================================== -->
+	<FrameLayout
+		android:id="@+id/saveModalOverlay"
+		android:layout_width="match_parent"
+		android:layout_height="match_parent"
+		android:background="#A3000000"
+		android:clickable="true"
+		android:elevation="28dp"
+		android:focusable="true"
+		android:padding="20dp"
+		android:visibility="gone">
+
+		<LinearLayout
+			android:id="@+id/saveModalCard"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_gravity="center"
+			android:clickable="true"
+			android:focusable="true"
+			android:maxWidth="360dp"
+			android:orientation="vertical"
+			android:padding="20dp">
+
+			<!-- Header -->
+			<LinearLayout
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:gravity="center_vertical"
+				android:orientation="horizontal">
+
+				<LinearLayout
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:orientation="vertical">
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:fontFamily="@font/google_sans_bold"
+						android:text="Export image"
+						android:textColor="#FFE2E2E9"
+						android:textSize="18sp"
+						tools:ignore="HardcodedText" />
+
+					<TextView
+						android:id="@+id/exportMetaText"
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginTop="2dp"
+						android:text="Full Resolution • PNG • 1000 × 1416 px"
+						android:textColor="#FFC4C6D0"
+						android:textSize="12sp"
+						tools:ignore="HardcodedText" />
+				</LinearLayout>
+
+				<ImageButton
+					android:id="@+id/btnCloseSaveModal"
+					android:layout_width="32dp"
+					android:layout_height="32dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:contentDescription="@android:string/cancel"
+					android:padding="6dp"
+					android:scaleType="fitCenter"
+					android:src="@drawable/ic_editor_close"
+					app:tint="#FFC4C6D0" />
+			</LinearLayout>
+
+			<!-- Rendered Preview Thumbnail -->
+			<FrameLayout
+				android:id="@+id/exportPreviewContainer"
+				android:layout_width="match_parent"
+				android:layout_height="208dp"
+				android:layout_marginTop="14dp"
+				android:padding="12dp">
+
+				<ImageView
+					android:id="@+id/exportPreviewImg"
+					android:layout_width="match_parent"
+					android:layout_height="match_parent"
+					android:layout_gravity="center"
+					android:elevation="6dp"
+					android:importantForAccessibility="no"
+					android:scaleType="fitCenter" />
+			</FrameLayout>
+
+			<!-- Crop Shape vs Perspective Unwarp Toggle (Shown when angled 4-point quad active) -->
+			<LinearLayout
+				android:id="@+id/exportCropModeRow"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="12dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingHorizontal="12dp"
+				android:paddingVertical="8dp"
+				android:visibility="gone">
+
+				<TextView
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:text="Crop output"
+					android:textColor="#FFC4C6D0"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+
+				<TextView
+					android:id="@+id/btnExpModeCutout"
+					android:layout_width="wrap_content"
+					android:layout_height="28dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="12dp"
+					android:text="Exact Shape"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+
+				<TextView
+					android:id="@+id/btnExpModeUnwarp"
+					android:layout_width="wrap_content"
+					android:layout_height="28dp"
+					android:layout_marginStart="4dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="12dp"
+					android:text="Unwarp Rect"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+			</LinearLayout>
+
+			<!-- Format Selector (PNG / JPG) -->
+			<LinearLayout
+				android:id="@+id/exportFormatRow"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="10dp"
+				android:gravity="center_vertical"
+				android:orientation="horizontal"
+				android:paddingHorizontal="12dp"
+				android:paddingVertical="8dp">
+
+				<TextView
+					android:layout_width="0dp"
+					android:layout_height="wrap_content"
+					android:layout_weight="1"
+					android:text="Format"
+					android:textColor="#FFC4C6D0"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+
+				<TextView
+					android:id="@+id/btnFmtPng"
+					android:layout_width="wrap_content"
+					android:layout_height="28dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="14dp"
+					android:text="PNG"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+
+				<TextView
+					android:id="@+id/btnFmtJpg"
+					android:layout_width="wrap_content"
+					android:layout_height="28dp"
+					android:layout_marginStart="4dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="14dp"
+					android:text="JPG"
+					android:textSize="12sp"
+					tools:ignore="HardcodedText" />
+			</LinearLayout>
+
+			<!-- Dialog Actions -->
+			<LinearLayout
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:layout_marginTop="16dp"
+				android:gravity="end|center_vertical"
+				android:orientation="horizontal">
+
+				<TextView
+					android:id="@+id/btnCancelSaveModal"
+					android:layout_width="wrap_content"
+					android:layout_height="40dp"
+					android:background="?attr/selectableItemBackgroundBorderless"
+					android:clickable="true"
+					android:focusable="true"
+					android:fontFamily="@font/google_sans_medium"
+					android:gravity="center"
+					android:paddingHorizontal="16dp"
+					android:text="@android:string/cancel"
+					android:textColor="#FFC4C6D0"
+					android:textSize="14sp" />
+
+				<LinearLayout
+					android:id="@+id/btnConfirmSave"
+					android:layout_width="wrap_content"
+					android:layout_height="40dp"
+					android:layout_marginStart="8dp"
+					android:clickable="true"
+					android:focusable="true"
+					android:gravity="center"
+					android:orientation="horizontal"
+					android:paddingHorizontal="20dp">
+
+					<ImageView
+						android:layout_width="16dp"
+						android:layout_height="16dp"
+						android:importantForAccessibility="no"
+						android:src="@drawable/ic_download"
+						app:tint="#FF062E6F" />
+
+					<TextView
+						android:layout_width="wrap_content"
+						android:layout_height="wrap_content"
+						android:layout_marginStart="8dp"
+						android:fontFamily="@font/google_sans_medium"
+						android:text="@string/save"
+						android:textColor="#FF062E6F"
+						android:textSize="14sp"
+						android:textStyle="bold" />
+				</LinearLayout>
+			</LinearLayout>
+		</LinearLayout>
+	</FrameLayout>
+
+</FrameLayout>
