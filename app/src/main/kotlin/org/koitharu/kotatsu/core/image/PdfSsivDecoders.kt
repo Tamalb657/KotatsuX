@@ -3,14 +3,17 @@ package org.koitharu.kotatsu.core.image
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import com.davemorrissey.labs.subscaleview.ImageSource
 import com.davemorrissey.labs.subscaleview.decoder.DecoderFactory
 import com.davemorrissey.labs.subscaleview.decoder.ImageDecoder
 import com.davemorrissey.labs.subscaleview.decoder.ImageRegionDecoder
 import java.io.File
+import java.util.Objects
 
 private const val PDF_SCHEME = "pdf"
 
@@ -24,14 +27,21 @@ class PdfBitmapDecoder(
 
 	override fun decode(context: Context, uri: Uri, sampleSize: Int): Bitmap = if (uri.scheme == PDF_SCHEME) {
 		val full = PdfPageRenderer.renderToBitmap(uri)
-		try {
-			scaleForSample(full, sampleSize)
-		} finally {
+		val scaled = scaleForSample(full, sampleSize)
+		if (scaled !== full) {
 			full.recycle()
 		}
+		scaled
 	} else {
 		delegate.decode(context, uri, sampleSize)
 	}
+
+	override fun decode(context: Context, source: ImageSource, sampleSize: Int): Bitmap =
+		if (source is ImageSource.Uri && source.uri.scheme == PDF_SCHEME) {
+			decode(context, source.uri, sampleSize)
+		} else {
+			delegate.decode(context, source, sampleSize)
+		}
 
 	private fun scaleForSample(bitmap: Bitmap, sampleSize: Int): Bitmap =
 		if (sampleSize <= 1) {
@@ -58,38 +68,78 @@ class PdfBitmapDecoder(
 
 /**
  * Region decoder for the zoomable reader view: renders the PDF page once and answers
- * tile requests by cropping it. Other schemes are delegated.
+ * tile requests by cropping and downsampling it. Other schemes are delegated cleanly.
  */
 class PdfRegionDecoder(
 	private val delegate: ImageRegionDecoder,
 ) : ImageRegionDecoder {
 
+	@Volatile
 	private var bitmap: Bitmap? = null
 
-	override fun init(context: Context, uri: Uri): android.graphics.Point {
+	@Volatile
+	private var isPdf: Boolean = false
+
+	override fun init(context: Context, uri: Uri): Point {
 		if (uri.scheme != PDF_SCHEME) {
+			isPdf = false
 			return delegate.init(context, uri)
 		}
+		isPdf = true
 		bitmap?.recycle()
-		bitmap = PdfPageRenderer.renderToBitmap(uri)
-		return android.graphics.Point(checkNotNull(bitmap).width, checkNotNull(bitmap).height)
+		val rendered = PdfPageRenderer.renderToBitmap(uri)
+		bitmap = rendered
+		return Point(rendered.width, rendered.height)
+	}
+
+	override fun init(context: Context, source: ImageSource): Point {
+		if (source is ImageSource.Uri && source.uri.scheme == PDF_SCHEME) {
+			return init(context, source.uri)
+		}
+		isPdf = false
+		return delegate.init(context, source)
 	}
 
 	override val isReady: Boolean
-		get() = bitmap != null
+		get() = if (isPdf) bitmap?.isRecycled == false else delegate.isReady
 
 	override fun decodeRegion(sRect: Rect, sampleSize: Int): Bitmap {
+		if (!isPdf) {
+			return delegate.decodeRegion(sRect, sampleSize)
+		}
 		val base = checkNotNull(bitmap) { "PdfRegionDecoder is not initialized" }
-		val left = (sRect.left / sampleSize.toFloat()).toInt().coerceIn(0, base.width - 1)
-		val top = (sRect.top / sampleSize.toFloat()).toInt().coerceIn(0, base.height - 1)
-		val width = ((sRect.width() / sampleSize.toFloat()).toInt()).coerceAtMost(base.width - left)
-		val height = ((sRect.height() / sampleSize.toFloat()).toInt()).coerceAtMost(base.height - top)
-		return Bitmap.createBitmap(base, left, top, width.coerceAtLeast(1), height.coerceAtLeast(1))
+		val left = sRect.left.coerceIn(0, base.width - 1)
+		val top = sRect.top.coerceIn(0, base.height - 1)
+		val right = sRect.right.coerceIn(left + 1, base.width)
+		val bottom = sRect.bottom.coerceIn(top + 1, base.height)
+		val cropped = Bitmap.createBitmap(base, left, top, right - left, bottom - top)
+		if (sampleSize <= 1) {
+			return if (cropped === base) {
+				base.copy(base.config ?: Bitmap.Config.ARGB_8888, false)
+			} else {
+				cropped
+			}
+		}
+		val outW = ((right - left) / sampleSize).coerceAtLeast(1)
+		val outH = ((bottom - top) / sampleSize).coerceAtLeast(1)
+		val scaled = Bitmap.createScaledBitmap(cropped, outW, outH, true)
+		if (scaled !== cropped && cropped !== base) {
+			cropped.recycle()
+		}
+		return if (scaled === base) {
+			base.copy(base.config ?: Bitmap.Config.ARGB_8888, false)
+		} else {
+			scaled
+		}
 	}
 
 	override fun recycle() {
-		bitmap?.recycle()
-		bitmap = null
+		if (isPdf) {
+			bitmap?.recycle()
+			bitmap = null
+		} else {
+			delegate.recycle()
+		}
 	}
 
 	class Factory(
@@ -106,7 +156,7 @@ class PdfRegionDecoder(
 internal object PdfPageRenderer {
 
 	fun renderToBitmap(uri: Uri): Bitmap {
-		val file = java.io.File(java.util.Objects.requireNonNull(uri.path))
+		val file = File(Objects.requireNonNull(uri.path))
 		val pageIndex = uri.fragment?.toIntOrNull()?.coerceAtLeast(0) ?: 0
 		return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
 			PdfRenderer(pfd).use { renderer ->

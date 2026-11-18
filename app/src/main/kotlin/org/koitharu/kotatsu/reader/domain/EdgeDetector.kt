@@ -12,6 +12,7 @@ import androidx.core.graphics.green
 import androidx.core.graphics.red
 import com.davemorrissey.labs.subscaleview.ImageSource
 import com.davemorrissey.labs.subscaleview.decoder.SkiaPooledImageRegionDecoder
+import org.koitharu.kotatsu.core.image.PdfRegionDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -36,7 +37,7 @@ class EdgeDetector(private val context: Context) {
 		}
 		return mutex.withLock {
 			withContext(Dispatchers.IO) {
-				val decoder = SkiaPooledImageRegionDecoder(Bitmap.Config.RGB_565)
+				val decoder = PdfRegionDecoder(SkiaPooledImageRegionDecoder(Bitmap.Config.RGB_565))
 				try {
 					val size = runInterruptible {
 						decoder.init(context, imageSource)
