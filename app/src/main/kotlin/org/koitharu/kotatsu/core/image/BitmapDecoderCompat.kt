@@ -67,7 +67,7 @@ object BitmapDecoderCompat {
 		return when (val format = probeMimeType(file)?.subtype) {
 			FORMAT_AVIF -> file.source().buffer().use { decodeAvif(it.readByteBuffer()) }
 			else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-				ImageDecoder.decodeBitmap(ImageDecoder.createSource(file))
+				ImageDecoder.decodeBitmap(ImageDecoder.createSource(file), DecoderConfigListener(isMutable = false))
 			} else {
 				checkBitmapNotNull(BitmapFactory.decodeFile(file.absolutePath), format)
 			}
@@ -273,6 +273,7 @@ object BitmapDecoderCompat {
 			info: ImageDecoder.ImageInfo,
 			source: ImageDecoder.Source
 		) {
+			decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
 			decoder.isMutableRequired = isMutable
 		}
 	}

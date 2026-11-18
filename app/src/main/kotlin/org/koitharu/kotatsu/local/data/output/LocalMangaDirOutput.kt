@@ -135,7 +135,11 @@ class LocalMangaDirOutput(
 		}
 		if (e == null) {
 			val resFile = File(file.absolutePath.removeSuffix(SUFFIX_TMP))
-			file.renameTo(resFile)
+			resFile.delete()
+			if (!file.renameTo(resFile)) {
+				file.copyTo(resFile, overwrite = true)
+				file.delete()
+			}
 		} else {
 			file.delete()
 			throw e

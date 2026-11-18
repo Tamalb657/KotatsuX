@@ -742,7 +742,7 @@ class CropDrawView @JvmOverloads constructor(
 		val key = "${preset.id}::$color::$cleanText"
 		textBitmapCache[key]?.let { if (!it.bitmap.isRecycled) return it }
 
-		val fontSize = 96f
+		var fontSize = 96f
 		val tp = TextPaint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
 			typeface = preset.typeface
 			textSize = fontSize
@@ -752,7 +752,13 @@ class CropDrawView @JvmOverloads constructor(
 		}
 
 		val lines = cleanText.split('\n')
-		val maxLineW = lines.maxOfOrNull { tp.measureText(it) }?.coerceAtLeast(64f) ?: 64f
+		var maxLineW = lines.maxOfOrNull { tp.measureText(it) }?.coerceAtLeast(64f) ?: 64f
+		if (maxLineW > 3200f) {
+			fontSize = (fontSize * (3200f / maxLineW)).coerceAtLeast(28f)
+			tp.textSize = fontSize
+			tp.letterSpacing = (preset.letterSpacingPx / fontSize).coerceIn(0f, 0.25f)
+			maxLineW = lines.maxOfOrNull { tp.measureText(it) }?.coerceAtLeast(64f) ?: 64f
+		}
 		val padX = 40
 		val padY = 32
 		val lineH = (fontSize * 1.24f)
@@ -764,7 +770,7 @@ class CropDrawView @JvmOverloads constructor(
 
 		val isDarkInk = !EditorColors.isLightSwatch(color) &&
 			(Color.red(color) + Color.green(color) + Color.blue(color) < 95)
-		val shadowColor = if (isDarkInk) 0x70FFFFFF else 0x96000000
+		val shadowColor: Int = if (isDarkInk) 0x70FFFFFF else 0x96000000.toInt()
 		val shadowDy = if (isDarkInk) 2f else 4f
 		tp.color = color
 		tp.setShadowLayer(10f, 0f, shadowDy, shadowColor)

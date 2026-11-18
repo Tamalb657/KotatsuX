@@ -32,8 +32,8 @@ object EpubBuilder {
 		title: String,
 		author: String?,
 	) {
-		val partFile = File(target.parentFile, target.name + ".part")
-		val tempDir = target.parentFile
+		val tempDir = checkNotNull(target.parentFile) { "Target file has no parent directory: $target" }
+		val partFile = File(tempDir, target.name + ".part")
 		val tempFiles = ArrayList<File>()
 		try {
 			ZipOutputStream(BufferedOutputStream(FileOutputStream(partFile))).use { zipOut ->
@@ -54,7 +54,8 @@ object EpubBuilder {
 			}
 			target.delete()
 			if (!partFile.renameTo(target)) {
-				throw IOException("Cannot save the EPUB file")
+				partFile.copyTo(target, overwrite = true)
+				partFile.delete()
 			}
 		} finally {
 			tempFiles.forEach { it.delete() }
@@ -148,38 +149,40 @@ object EpubBuilder {
 				val entry = archive.getEntry(page.entryName)
 					?: throw IOException("Missing page entry ${page.entryName}")
 				val extracted = File(tempDir, "kotatsu_epub_${imageSeq}_${page.entryName.hashCode()}.tmp")
-				tempFiles += extracted
-				archive.getInputStream(entry).use { input ->
-					extracted.outputStream().use { output ->
-						input.copyTo(output)
+				var converted: File? = null
+				try {
+					archive.getInputStream(entry).use { input ->
+						extracted.outputStream().use { output ->
+							input.copyTo(output)
+						}
 					}
-				}
-				val kind = PageImage.probe(extracted)
-				val imageName: String
-				val mediaType: String
-				if (kind == PageImage.Kind.OTHER) {
-					val converted = File(tempDir, "kotatsu_epub_c_${imageSeq}.tmp")
-					tempFiles += converted
-					PageImage.toJpegFile(extracted, converted)
-					imageName = "images/p%05d.jpg".format(Locale.ROOT, imageSeq)
-					mediaType = "image/jpeg"
-					zipOut.writeFileEntry(converted, "OEBPS/$imageName")
-				} else {
-					val ext = when (kind) {
-						PageImage.Kind.JPEG -> "jpg"
-						PageImage.Kind.PNG -> "png"
-						PageImage.Kind.WEBP -> "webp"
-						else -> "gif"
+					val kind = PageImage.probe(extracted)
+					val imageName: String
+					if (kind == PageImage.Kind.OTHER) {
+						val conv = File(tempDir, "kotatsu_epub_c_${imageSeq}.tmp")
+						converted = conv
+						PageImage.toJpegFile(extracted, conv)
+						imageName = "images/p%05d.jpg".format(Locale.ROOT, imageSeq)
+						zipOut.writeFileEntry(conv, "OEBPS/$imageName")
+					} else {
+						val ext = when (kind) {
+							PageImage.Kind.JPEG -> "jpg"
+							PageImage.Kind.PNG -> "png"
+							PageImage.Kind.WEBP -> "webp"
+							else -> "gif"
+						}
+						imageName = "images/p%05d.$ext".format(Locale.ROOT, imageSeq)
+						zipOut.writeFileEntry(extracted, "OEBPS/$imageName")
 					}
-					imageName = "images/p%05d.$ext".format(Locale.ROOT, imageSeq)
-					mediaType = kind.mediaType()
-					zipOut.writeFileEntry(extracted, "OEBPS/$imageName")
+					imageSeq++
+					manifestImages += imageName
+					body.append(
+						"""<div class="page"><img src="../$imageName" alt="Page ${page.pageNumber + 1}"/></div>""",
+					)
+				} finally {
+					extracted.delete()
+					converted?.delete()
 				}
-				imageSeq++
-				manifestImages += imageName
-				body.append(
-					"""<div class="page"><img src="../$imageName" alt="Page ${page.pageNumber + 1}"/></div>""",
-				)
 			}
 			if (body.isEmpty()) {
 				continue

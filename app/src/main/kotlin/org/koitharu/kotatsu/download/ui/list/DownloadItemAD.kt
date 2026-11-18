@@ -117,13 +117,18 @@ fun downloadItemAD(
 				binding.textViewStatus.setText(
 					if (item.isPaused) R.string.paused else R.string.manga_downloading_,
 				)
-				binding.progressBar.isIndeterminate = item.isIndeterminate
 				binding.progressBar.isVisible = true
-				binding.progressBar.max = item.max
 				binding.progressBar.isEnabled = !item.isPaused
-				binding.progressBar.setProgressCompat(item.progress, payloads.isNotEmpty())
-				binding.textViewPercent.text = percentPattern.format((item.percent * 100f).format(1))
-				binding.textViewPercent.isVisible = true
+				if (item.isIndeterminate) {
+					binding.progressBar.isIndeterminate = true
+					binding.textViewPercent.isVisible = false
+				} else {
+					binding.progressBar.isIndeterminate = false
+					binding.progressBar.max = item.max
+					binding.progressBar.setProgressCompat(item.progress, payloads.isNotEmpty())
+					binding.textViewPercent.text = percentPattern.format((item.percent * 100f).format(1))
+					binding.textViewPercent.isVisible = true
+				}
 				binding.textViewDetails.textAndVisible = when {
 					item.isPaused -> item.getErrorMessage(context)
 					item.isStuck -> context.getString(R.string.stuck)

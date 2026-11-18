@@ -257,7 +257,22 @@ object MangaFontRegistry {
 	private fun isBundledOrCached(appContext: Context, spec: BuiltInSpec): Boolean {
 		if (spec.remoteUrl == null) return true
 		val f = getDownloadedFile(appContext, spec.fileName)
-		return f.isFile && f.length() > 256L
+		return isValidFontFile(f)
+	}
+
+	private fun isValidFontFile(file: File): Boolean {
+		if (!file.isFile || file.length() <= 256L) return false
+		return runCatching {
+			val hdr = ByteArray(4)
+			val read = file.inputStream().use { it.read(hdr) }
+			if (read < 4) return false
+			// TrueType (0x00010000 or 'true'), OpenType CFF ('OTTO'), or Font Collection ('ttcf')
+			val tag = ((hdr[0].toInt() and 0xFF) shl 24) or
+				((hdr[1].toInt() and 0xFF) shl 16) or
+				((hdr[2].toInt() and 0xFF) shl 8) or
+				(hdr[3].toInt() and 0xFF)
+			tag == 0x00010000 || tag == 0x4F54544F || tag == 0x74727565 || tag == 0x74746366
+		}.getOrDefault(false)
 	}
 
 	private fun loadResolvedFont(
@@ -318,6 +333,9 @@ object MangaFontRegistry {
 				conn.disconnect()
 			}
 
+			if (!isValidFontFile(tmpFile)) {
+				error("Downloaded file is not a valid TTF/OTF font")
+			}
 			val baseTf = Typeface.createFromFile(tmpFile)
 			if (finalFile.exists()) finalFile.delete()
 			if (!tmpFile.renameTo(finalFile)) {

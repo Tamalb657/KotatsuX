@@ -1,6 +1,8 @@
 package org.koitharu.kotatsu.core.parser
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Interceptor
 import okhttp3.Response
 import org.koitharu.kotatsu.core.cache.MemoryContentCache
@@ -30,9 +32,13 @@ class ParserMangaRepository(
 	cache: MemoryContentCache,
 ) : CachingMangaRepository(cache), Interceptor {
 
+	private val parserMutex = Mutex()
+
 	private val filterOptionsLazy = suspendLazy(Dispatchers.Default) {
 		withMirrors {
-			parser.getFilterOptions()
+			parserMutex.withLock {
+				parser.getFilterOptions()
+			}
 		}
 	}
 
@@ -64,32 +70,44 @@ class ParserMangaRepository(
 
 	override suspend fun getList(offset: Int, order: SortOrder?, filter: MangaListFilter?): List<Manga> {
 		return withMirrors {
-			parser.getList(offset, order ?: defaultSortOrder, filter ?: MangaListFilter.EMPTY)
+			parserMutex.withLock {
+				parser.getList(offset, order ?: defaultSortOrder, filter ?: MangaListFilter.EMPTY)
+			}
 		}
 	}
 
 	override suspend fun getPagesImpl(
 		chapter: MangaChapter
 	): List<MangaPage> = withMirrors {
-		parser.getPages(chapter)
+		parserMutex.withLock {
+			parser.getPages(chapter)
+		}
 	}
 
 	override suspend fun getPageUrl(page: MangaPage): String = withMirrors {
-		parser.getPageUrl(page).also { result ->
-			check(result.isNotEmpty()) { "Page url is empty" }
+		parserMutex.withLock {
+			parser.getPageUrl(page).also { result ->
+				check(result.isNotEmpty()) { "Page url is empty" }
+			}
 		}
 	}
 
 	override suspend fun getFilterOptions(): MangaListFilterOptions = filterOptionsLazy.get()
 
 	suspend fun getFavicons(): Favicons = withMirrors {
-		parser.getFavicons()
+		parserMutex.withLock {
+			parser.getFavicons()
+		}
 	}
 
-	override suspend fun getRelatedMangaImpl(seed: Manga): List<Manga> = parser.getRelatedManga(seed)
+	override suspend fun getRelatedMangaImpl(seed: Manga): List<Manga> = parserMutex.withLock {
+		parser.getRelatedManga(seed)
+	}
 
 	override suspend fun getDetailsImpl(manga: Manga): Manga = withMirrors {
-		parser.getDetails(manga)
+		parserMutex.withLock {
+			parser.getDetails(manga)
+		}
 	}
 
 	fun getAuthProvider(): MangaParserAuthProvider? = parser.authorizationProvider

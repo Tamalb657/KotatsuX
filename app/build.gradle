@@ -66,8 +66,8 @@ android {
 		applicationId 'io.github.tamalb657.kotatsux'
 		minSdk = 23
 		targetSdk = 37
-		versionCode = 2056
-		versionName = '9.8.7.7'
+		versionCode = 2057
+		versionName = '9.8.7.8'
 		generatedDensities = []
 		ndk {
 			// ARM only. x86 and x86_64 devices - Intel Chromebooks, emulators, BlueStacks - run these

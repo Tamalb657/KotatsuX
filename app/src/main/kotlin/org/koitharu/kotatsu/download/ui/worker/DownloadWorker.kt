@@ -129,6 +129,13 @@ class DownloadWorker @AssistedInject constructor(
 
 	private val etaEstimator = RealtimeEtaEstimator()
 	private val notificationThrottler = Throttler(400)
+	private val pageHttpClient by lazy {
+		okHttp.newBuilder()
+			.connectTimeout(15, TimeUnit.SECONDS)
+			.readTimeout(25, TimeUnit.SECONDS)
+			.callTimeout(60, TimeUnit.SECONDS)
+			.build()
+	}
 
 	override suspend fun doWork(): Result {
 		setForeground(getForegroundInfo())
@@ -286,7 +293,15 @@ class DownloadWorker @AssistedInject constructor(
 					}
 					publishState(currentState.copy(downloadedChapters = currentState.downloadedChapters + 1))
 				}
-				publishState(currentState.copy(isIndeterminate = true, eta = -1L, isStuck = false))
+				publishState(
+					currentState.copy(
+						currentChapter = maxOf(0, currentState.totalChapters - 1),
+						currentPage = maxOf(0, currentState.totalPages - 1),
+						isIndeterminate = true,
+						eta = -1L,
+						isStuck = false,
+					),
+				)
 				output.mergeWithExisting()
 				output.finish()
 				val localManga = if (output.isLocalReadable) {
@@ -413,7 +428,7 @@ class DownloadWorker @AssistedInject constructor(
 		}
 		val request = PageLoader.createPageRequest(url, source)
 		slowdownDispatcher.delay(source)
-		return imageProxyInterceptor.interceptPageRequest(request, okHttp)
+		return imageProxyInterceptor.interceptPageRequest(request, pageHttpClient)
 			.ensureSuccess()
 			.use { response ->
 				var file: File? = null

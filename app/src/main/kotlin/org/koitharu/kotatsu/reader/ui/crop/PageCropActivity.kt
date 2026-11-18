@@ -51,6 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koitharu.kotatsu.R
+import org.koitharu.kotatsu.core.image.BitmapDecoderCompat
 import org.koitharu.kotatsu.core.prefs.AppSettings
 import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
 import java.io.File
@@ -561,17 +562,6 @@ class PageCropActivity : AppCompatActivity() {
 				override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
 				override fun afterTextChanged(s: Editable?) {
 					btnClearTextInput.isVisible = !s.isNullOrEmpty()
-					val preset = cropView.getFontPresetById(activeTextFontId)
-					if (preset.uppercase && !isUpdatingInputCase && !s.isNullOrEmpty()) {
-						val upper = s.toString().uppercase()
-						if (upper != s.toString()) {
-							isUpdatingInputCase = true
-							val sel = canvasTextInput.selectionStart
-							canvasTextInput.setText(upper)
-							canvasTextInput.setSelection(sel.coerceIn(0, upper.length))
-							isUpdatingInputCase = false
-						}
-					}
 				}
 			},
 		)
@@ -1348,14 +1338,19 @@ class PageCropActivity : AppCompatActivity() {
 		val preset = cropView.getFontPresetById(activeTextFontId)
 		canvasTextInput.typeface = preset.typeface
 		canvasTextInput.letterSpacing = (preset.letterSpacingPx / 28f).coerceIn(0f, 0.14f)
-		canvasTextInput.filters = arrayOf(InputFilter.LengthFilter(80))
-		if (preset.uppercase && !canvasTextInput.text.isNullOrEmpty()) {
+		canvasTextInput.filters = if (preset.uppercase) {
+			arrayOf(InputFilter.AllCaps(), InputFilter.LengthFilter(80))
+		} else {
+			arrayOf(InputFilter.LengthFilter(80))
+		}
+		if (preset.uppercase && !isUpdatingInputCase && !canvasTextInput.text.isNullOrEmpty()) {
 			val cur = canvasTextInput.text.toString()
-			val up = cur.uppercase()
+			val up = cur.uppercase(Locale.getDefault())
 			if (cur != up) {
 				isUpdatingInputCase = true
+				val sel = canvasTextInput.selectionStart.coerceAtLeast(0)
 				canvasTextInput.setText(up)
-				canvasTextInput.setSelection(up.length)
+				canvasTextInput.setSelection(sel.coerceAtMost(up.length))
 				isUpdatingInputCase = false
 			}
 		}
@@ -1892,14 +1887,16 @@ class PageCropActivity : AppCompatActivity() {
 		}
 		val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
 		BitmapFactory.decodeFile(file.path, bounds)
-		check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Cannot decode page" }
+		if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+			return BitmapDecoderCompat.decode(file)
+		}
 		val opts = BitmapFactory.Options().apply {
 			inPreferredConfig = Bitmap.Config.ARGB_8888
 			inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, 2600)
 		}
 		return BitmapFactory.decodeFile(file.path, opts)
 			?: BitmapFactory.decodeFile(file.path, null)
-			?: throw IllegalStateException("Cannot decode page")
+			?: BitmapDecoderCompat.decode(file)
 	}
 
 	private fun decodeUri(uri: Uri): Bitmap {

@@ -3,6 +3,7 @@ package org.koitharu.kotatsu.local.data.output
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
@@ -34,7 +35,7 @@ abstract class LocalMangaArchiveOutput(
 	protected val manga: Manga,
 ) : LocalMangaOutput(rootFile) {
 
-	private val output = ZipOutput(File(rootFile.path + SUFFIX_TMP))
+	private val output = ZipOutput(File(rootFile.path + SUFFIX_TMP).also { it.delete() })
 	private val mutex = Mutex()
 	private val chapters = LinkedHashMap<MangaChapter, MutableList<ArchivePage>>()
 	private var coverEntryName: String? = null
@@ -176,12 +177,20 @@ internal object PageImage {
 	}
 
 	private fun flattenOnWhite(bitmap: Bitmap): Bitmap {
-		if (!bitmap.hasAlpha()) {
-			return bitmap
+		val software = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE) {
+			bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+		} else {
+			bitmap
 		}
-		val result = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+		if (!software.hasAlpha()) {
+			return software
+		}
+		val result = Bitmap.createBitmap(software.width, software.height, Bitmap.Config.ARGB_8888)
 		result.eraseColor(Color.WHITE)
-		Canvas(result).drawBitmap(bitmap, 0f, 0f, null)
+		Canvas(result).drawBitmap(software, 0f, 0f, null)
+		if (software !== bitmap) {
+			software.recycle()
+		}
 		return result
 	}
 

@@ -28,23 +28,29 @@ object PdfBuilder {
 		target: File,
 		title: String,
 	) {
-		val partFile = File(target.parentFile, target.name + ".part")
-		val tempDir = target.parentFile
-		val tempFiles = ArrayList<File>()
+		val tempDir = checkNotNull(target.parentFile) { "Target file has no parent directory: $target" }
+		val partFile = File(tempDir, target.name + ".part")
+		val tempFiles = ArrayList<File>(2)
 		try {
+			val pageList = buildPageList(archive, chapters, coverEntryName)
+			check(pageList.isNotEmpty()) { "Cannot build a PDF without pages" }
 			FileOutputStream(partFile).buffered().use { out ->
 				val writer = PdfStreamWriter(out)
 				writer.writeHeader()
-				val images = ArrayList<PreparedImage>()
-				val pageList = buildPageList(archive, chapters, coverEntryName)
-				for (page in pageList) {
-					images += prepareImage(archive, page, tempDir, tempFiles)
+				writer.writeDocument(pageList, title) { page ->
+					try {
+						val prepared = prepareImage(archive, page.value, tempDir, tempFiles)
+						writer.writePageObjects(pageIndex = page.index, image = prepared)
+					} finally {
+						tempFiles.forEach { it.delete() }
+						tempFiles.clear()
+					}
 				}
-				writer.writeDocument(images, title)
 			}
 			target.delete()
 			if (!partFile.renameTo(target)) {
-				throw IOException("Cannot save the PDF file")
+				partFile.copyTo(target, overwrite = true)
+				partFile.delete()
 			}
 		} finally {
 			tempFiles.forEach { it.delete() }
@@ -241,8 +247,12 @@ object PdfBuilder {
 			writeRawBytes(byteArrayOf(0x25, 0xE2.toByte(), 0xE3.toByte(), 0xCF.toByte(), 0xD3.toByte()))
 		}
 
-		fun writeDocument(images: List<PreparedImage>, title: String) {
-			val count = images.size
+		fun writeDocument(
+			pages: List<PreparedImage.Source>,
+			title: String,
+			onWritePage: (IndexedValue<PreparedImage.Source>) -> Unit,
+		) {
+			val count = pages.size
 			check(count > 0) { "Cannot build a PDF without pages" }
 			// object 1: catalog, object 2: pages root
 			writeObject(1, "<< /Type /Catalog /Pages 2 0 R >>")
@@ -260,40 +270,8 @@ object PdfBuilder {
 				append("] >>")
 			}
 			writeObject(2, kids)
-			for (i in 0 until count) {
-				val image = images[i]
-				val imgId = 3 + 3 * i
-				val contentId = imgId + 1
-				val pageId = imgId + 2
-				// image XObject (JPEG passthrough)
-				writeObjectHeader(imgId)
-				val fileLength = image.file.length()
-				val colorSpace = if (image.grayscale) "/DeviceGray" else "/DeviceRGB"
-				writeRaw("<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height}")
-				writeRaw(" /ColorSpace $colorSpace /BitsPerComponent 8 /Filter /DCTDecode /Length $fileLength >>")
-				writeRaw("\nstream\n")
-				writeFileBytes(image.file)
-				writeRaw("\nendstream")
-				writeObjectFooter()
-				// content stream: draw the image filling the page
-				val scale = minOf(1f, MAX_PAGE_UNITS.toFloat() / maxOf(image.width, image.height))
-				val w = image.width * scale
-				val h = image.height * scale
-				val content = "q\n${w} 0 0 ${h} 0 0 cm\n/Im0 Do\nQ"
-				val contentBytes = content.toByteArray(Charsets.ISO_8859_1)
-				writeObjectHeader(contentId)
-				writeRaw("<< /Length ${contentBytes.size} >>")
-				writeRaw("\nstream\n")
-				writeRawBytes(contentBytes)
-				writeRaw("\nendstream")
-				writeObjectFooter()
-				// page object
-				writeObject(
-					pageId,
-					"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $w $h]" +
-						" /Resources << /XObject << /Im0 ${imgId} 0 R >> >>" +
-						" /Contents ${contentId} 0 R >>",
-				)
+			for ((i, src) in pages.withIndex()) {
+				onWritePage(IndexedValue(i, src))
 			}
 			// Info dictionary (title as UTF-16BE hex string to survive non-ASCII titles)
 			val infoId = 3 + 3 * count
@@ -306,6 +284,41 @@ object PdfBuilder {
 			}
 			writeObject(infoId, "<< /Title $titleHex /Producer (Kotatsu) >>")
 			writeXrefAndTrailer(infoId + 1, infoId)
+		}
+
+		fun writePageObjects(pageIndex: Int, image: PreparedImage) {
+			val imgId = 3 + 3 * pageIndex
+			val contentId = imgId + 1
+			val pageId = imgId + 2
+			// image XObject (JPEG passthrough)
+			writeObjectHeader(imgId)
+			val fileLength = image.file.length()
+			val colorSpace = if (image.grayscale) "/DeviceGray" else "/DeviceRGB"
+			writeRaw("<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height}")
+			writeRaw(" /ColorSpace $colorSpace /BitsPerComponent 8 /Filter /DCTDecode /Length $fileLength >>")
+			writeRaw("\nstream\n")
+			writeFileBytes(image.file)
+			writeRaw("\nendstream")
+			writeObjectFooter()
+			// content stream: draw the image filling the page
+			val scale = minOf(1f, MAX_PAGE_UNITS.toFloat() / maxOf(image.width, image.height))
+			val w = image.width * scale
+			val h = image.height * scale
+			val content = "q\n${w} 0 0 ${h} 0 0 cm\n/Im0 Do\nQ"
+			val contentBytes = content.toByteArray(Charsets.ISO_8859_1)
+			writeObjectHeader(contentId)
+			writeRaw("<< /Length ${contentBytes.size} >>")
+			writeRaw("\nstream\n")
+			writeRawBytes(contentBytes)
+			writeRaw("\nendstream")
+			writeObjectFooter()
+			// page object
+			writeObject(
+				pageId,
+				"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $w $h]" +
+					" /Resources << /XObject << /Im0 ${imgId} 0 R >> >>" +
+					" /Contents ${contentId} 0 R >>",
+			)
 		}
 
 		private fun writeXrefAndTrailer(size: Int, infoId: Int) {

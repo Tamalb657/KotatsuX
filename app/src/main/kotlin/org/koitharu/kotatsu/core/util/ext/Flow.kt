@@ -3,6 +3,7 @@ package org.koitharu.kotatsu.core.util.ext
 import android.os.SystemClock
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -106,12 +107,32 @@ fun tickerFlow(interval: Long, timeUnit: TimeUnit): Flow<Long> = flow {
 	}
 }
 
-fun <T> Flow<T>.withTicker(interval: Long, timeUnit: TimeUnit) = channelFlow<T> {
-	onCompletion { cause ->
-		close(cause)
-	}.combine(tickerFlow(interval, timeUnit)) { x, _ -> x }
-		.transformWhile<T, Unit> { trySend(it).isSuccess }
-		.collect()
+fun <T> Flow<T>.withTicker(interval: Long, timeUnit: TimeUnit): Flow<T> = channelFlow {
+	val lock = Any()
+	var hasValue = false
+	var latestValue: T? = null
+	val delayMs = timeUnit.toMillis(interval)
+	val tickerJob = launch {
+		while (true) {
+			delay(delayMs)
+			val snapshot = synchronized(lock) { hasValue to latestValue }
+			if (snapshot.first) {
+				@Suppress("UNCHECKED_CAST")
+				send(snapshot.second as T)
+			}
+		}
+	}
+	try {
+		collect { value ->
+			synchronized(lock) {
+				latestValue = value
+				hasValue = true
+			}
+			send(value)
+		}
+	} finally {
+		tickerJob.cancel()
+	}
 }
 
 @Suppress("UNCHECKED_CAST")

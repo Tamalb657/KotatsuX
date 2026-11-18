@@ -23,7 +23,7 @@ class LocalMangaZipOutput(
 	manga: Manga,
 ) : LocalMangaOutput(rootFile) {
 
-	private val output = ZipOutput(File(rootFile.path + ".tmp"))
+	private val output = ZipOutput(File(rootFile.path + ".tmp").also { it.delete() })
 	private val index = MangaIndex(null)
 	private val mutex = Mutex()
 
@@ -78,9 +78,12 @@ class LocalMangaZipOutput(
 				output.put(ENTRY_NAME_INDEX, index.toString())
 				output.finish()
 			}
+			rootFile.delete()
+			if (!output.file.renameTo(rootFile)) {
+				output.file.copyTo(rootFile, overwrite = true)
+				output.file.delete()
+			}
 		}
-		rootFile.deleteAwait()
-		output.file.renameTo(rootFile)
 		Unit
 	}
 
